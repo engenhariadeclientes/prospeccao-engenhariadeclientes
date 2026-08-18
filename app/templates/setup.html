@@ -1,7 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Configuração inicial{% endblock %}
 {% block content %}
-<div class="card" style="max-width:400px; margin:4rem auto;">
+<div style="max-width:280px; margin:3rem auto 1.5rem;">
+  <img src="/static/logo-full.png" alt="Engenharia de Clientes" style="width:100%; border-radius:12px;">
+</div>
+<div class="card" style="max-width:400px; margin:0 auto;">
   <h1>Criar primeiro acesso</h1>
   <p style="font-size:.9rem; color:#555;">Nenhum usuário cadastrado ainda. Crie a primeira conta — as demais podem ser adicionadas depois, já logado, em "Usuários".</p>
   <form method="post" action="/setup" style="display:flex; flex-direction:column; gap:.75rem;">
