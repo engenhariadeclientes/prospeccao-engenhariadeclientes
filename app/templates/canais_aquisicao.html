@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Canais de aquisição{% endblock %}
+{% block content %}
+<h1>Canais de aquisição</h1>
+
+<table>
+  <thead><tr><th>Nome</th><th>Cadastrado em</th></tr></thead>
+  <tbody>
+    {% for c in canais %}
+    <tr><td>{{ c.nome }}</td><td>{{ c.criado_em.strftime('%d/%m/%Y') }}</td></tr>
+    {% else %}
+    <tr><td colspan="2">Nenhum canal cadastrado.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="card" style="max-width:360px;">
+  <h2 style="font-size:1.1rem; margin-top:0;">Cadastrar canal</h2>
+  <form method="post" action="/canais-aquisicao" style="display:flex; gap:.5rem;">
+    <input type="text" name="nome" placeholder="Ex.: ADS LinkedIn" required style="flex:1;">
+    <button type="submit">Adicionar</button>
+  </form>
+</div>
+{% endblock %}

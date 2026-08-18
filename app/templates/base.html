@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8">
-  <title>{% block title %}Prospecção{% endblock %} — Engenharia de Clientes</title>
+  <title>{% block title %}CRM{% endblock %} — Engenharia de Clientes</title>
   <style>
     :root { --navy: #0b2545; --navy-claro: #13315c; --navy-bg: #f4f6fa; }
     body { font-family: system-ui, sans-serif; max-width: 1100px; margin: 0 auto 2rem; padding: 0 1rem; color: #1a1a1a; background: #fff; }
@@ -13,6 +13,14 @@
     nav .links { display: flex; gap: 1.2rem; align-items: center; font-size: .9rem; }
     nav a { color: #dce6f5; text-decoration: none; }
     nav a:hover { color: #fff; text-decoration: underline; }
+    nav details { position: relative; }
+    nav summary { cursor: pointer; list-style: none; color: #dce6f5; }
+    nav summary::-webkit-details-marker { display: none; }
+    nav summary:hover { color: #fff; }
+    nav details[open] summary { color: #fff; }
+    nav details .menu { position: absolute; top: 1.6rem; right: 0; background: #fff; border-radius: 6px; box-shadow: 0 4px 16px rgba(0,0,0,.2); padding: .5rem 0; min-width: 180px; z-index: 10; }
+    nav details .menu a { display: block; color: var(--navy); padding: .4rem 1rem; font-size: .85rem; }
+    nav details .menu a:hover { background: var(--navy-bg); text-decoration: none; }
     input, select, textarea { padding: .5rem; border: 1px solid #ccc; border-radius: 4px; font-family: inherit; }
     button, .botao { padding: .5rem 1rem; background: var(--navy); color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: .9rem; text-decoration: none; display: inline-block; }
     button:hover, .botao:hover { background: var(--navy-claro); }
@@ -27,16 +35,25 @@
 <body>
   {% if consultor %}
   <nav>
-    <strong>Prospecção — Engenharia de Clientes</strong>
+    <strong>CRM — Engenharia de Clientes</strong>
     <div class="links">
       <span>{{ consultor.nome }}</span>
       <a href="/">Funil</a>
+      <a href="/prospects/novo">+ Novo negócio</a>
       <a href="/agenda">Agenda{% if pendencias %} 🔔 {{ pendencias }}{% endif %}</a>
       {% if consultor.is_admin %}
       <a href="/admin">Admin</a>
-      <a href="/produtos">Produtos</a>
-      <a href="/motivos-perda">Motivos de perda</a>
-      <a href="/consultores">Consultores</a>
+      <details class="dropdown">
+        <summary>Cadastros ▾</summary>
+        <div class="menu">
+          <a href="/produtos">Produtos</a>
+          <a href="/motivos-perda">Motivos de perda</a>
+          <a href="/canais-aquisicao">Canais de aquisição</a>
+          <a href="/categorias-aquisicao">Categorias de aquisição</a>
+          <a href="/consultores">Usuários</a>
+          <a href="/log-acesso">Log de acesso</a>
+        </div>
+      </details>
       {% endif %}
       <a href="/export.csv">Exportar CSV</a>
       <a href="/logout">Sair</a>

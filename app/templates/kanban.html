@@ -2,10 +2,14 @@
 {% block title %}Funil{% endblock %}
 {% block content %}
 <style>
-  form.busca { display: flex; gap: .5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+  .secao-busca { margin-bottom: 1.5rem; }
+  .secao-busca h2 { font-size: 1rem; margin: 0 0 .3rem 0; color: var(--navy); cursor: help; }
+  form.busca { display: flex; gap: .5rem; flex-wrap: wrap; }
   form.busca input[name="categoria"] { flex: 2; min-width: 220px; }
   form.busca input[name="cidade"] { flex: 1; min-width: 160px; }
-  .filtros { margin-bottom: 1rem; font-size: .9rem; }
+  .aviso-fila { font-size: .85rem; color: #b3550a; margin-top: .4rem; }
+  .filtros { display: flex; gap: .6rem; flex-wrap: wrap; align-items: flex-end; margin-bottom: 1rem; padding: .8rem; background: var(--navy-bg); border-radius: 8px; }
+  .filtros label { font-size: .8rem; color: #444; display: flex; flex-direction: column; gap: .2rem; }
   .board { display: flex; gap: 1rem; overflow-x: auto; padding-bottom: 1rem; }
   .coluna { flex: 0 0 260px; background: var(--navy-bg); border-radius: 8px; padding: .75rem; }
   .coluna h3 { font-size: .95rem; margin: 0 0 .5rem 0; display: flex; justify-content: space-between; color: var(--navy); }
@@ -18,25 +22,54 @@
   .buscas-recentes { font-size: .85rem; color: #555; }
 </style>
 
-<form class="busca" method="post" action="/buscar">
-  <input type="text" name="categoria" placeholder="Categoria (ex.: garantidora de receita)" required>
-  <input type="text" name="cidade" placeholder="Cidade (ex.: Blumenau, SC)" required>
-  <input type="number" name="max_resultados" value="40" min="1" max="120" title="Máximo de resultados">
-  <button type="submit">Buscar</button>
-</form>
-
-{% if consultor.is_admin %}
-<div class="filtros">
-  Ver funil de:
-  <select onchange="window.location.href='/?ver='+this.value">
-    <option value="meu" {{ 'selected' if ver == 'meu' else '' }}>Meu funil</option>
-    <option value="" {{ 'selected' if ver == '' else '' }}>Todos</option>
-    {% for c in consultores %}
-    <option value="{{ c.id }}" {{ 'selected' if ver == c.id|string else '' }}>{{ c.nome }}</option>
-    {% endfor %}
-  </select>
+<div class="secao-busca">
+  <h2 title="Busca empresas no Google Maps por categoria + cidade e adiciona os resultados com telefone válido na Fila. Novas buscas só ficam liberadas depois que a fila atual for 100% contatada, pra evitar acumular leads sem trabalhar.">
+    🔍 Buscador Google <span style="font-size:.75rem; font-weight:normal; color:#888;">(passe o mouse aqui pra saber como funciona)</span>
+  </h2>
+  <form class="busca" method="post" action="/buscar">
+    <input type="text" name="categoria" placeholder="Categoria (ex.: garantidora de receita)" required {{ 'disabled' if fila_pendente else '' }}>
+    <input type="text" name="cidade" placeholder="Cidade (ex.: Blumenau, SC)" required {{ 'disabled' if fila_pendente else '' }}>
+    <input type="number" name="max_resultados" value="40" min="1" max="120" title="Máximo de resultados" {{ 'disabled' if fila_pendente else '' }}>
+    <button type="submit" {{ 'disabled' if fila_pendente else '' }}>Buscar</button>
+  </form>
+  {% if fila_pendente %}
+  <p class="aviso-fila">⚠ Nova busca bloqueada: ainda há {{ fila_pendente }} prospect(s) na Fila sem contato. Assuma e registre o primeiro contato de todos pra liberar.</p>
+  {% endif %}
 </div>
-{% endif %}
+
+<form class="filtros" method="get" action="/">
+  <input type="hidden" name="ver" value="{{ ver }}">
+  <label>Buscar por nome/decisor
+    <input type="text" name="q" value="{{ q }}" placeholder="Nome da empresa ou decisor">
+  </label>
+  <label>Produto
+    <select name="produto_id">
+      <option value="">Todos</option>
+      {% for p in produtos %}
+      <option value="{{ p.id }}" {{ 'selected' if produto_id == p.id|string else '' }}>{{ p.nome }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Previsão de fechamento — de
+    <input type="date" name="prazo_de" value="{{ prazo_de }}">
+  </label>
+  <label>até
+    <input type="date" name="prazo_ate" value="{{ prazo_ate }}">
+  </label>
+  {% if consultor.is_admin %}
+  <label>Ver funil de
+    <select name="ver_select" onchange="document.querySelector('input[name=ver]').value=this.value; this.form.submit()">
+      <option value="meu" {{ 'selected' if ver == 'meu' else '' }}>Meu funil</option>
+      <option value="" {{ 'selected' if ver == '' else '' }}>Todos</option>
+      {% for c in consultores %}
+      <option value="{{ c.id }}" {{ 'selected' if ver == c.id|string else '' }}>{{ c.nome }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  {% endif %}
+  <button type="submit">Filtrar</button>
+  {% if q or produto_id or prazo_de or prazo_ate %}<a href="/?ver={{ ver }}" class="botao secundario">Limpar filtros</a>{% endif %}
+</form>
 
 <div class="board">
   {% for status in status_validos %}
@@ -51,7 +84,7 @@
       {% if p.valor_orcamento %}<span class="meta valor">R$ {{ '%.2f'|format(p.valor_orcamento)|replace('.', ',') }}</span>{% endif %}
       <span class="meta">Entrou em {{ p.criado_em.strftime('%d/%m/%Y') }}</span>
       <span class="meta">
-        {{ p.consultor_nome or 'sem consultor' }}
+        {{ p.consultor_nome or 'sem responsável' }}
         {% if not p.consultor_nome %}
         <form method="post" action="/prospects/{{ p.id }}/assumir" style="display:inline">
           <button type="submit" class="assumir">Assumir</button>
@@ -70,7 +103,15 @@
 <h2 style="font-size:1.1rem">Buscas recentes</h2>
 <ul class="buscas-recentes">
   {% for b in buscas %}
-  <li>{{ b.criado_em.strftime('%d/%m/%Y %H:%M') }} — "{{ b.categoria }}" em {{ b.cidade }} (por {{ b.criado_por_nome or '—' }}): {{ b.resultados_encontrados }} encontrados, {{ b.leads_novos }} novos</li>
+  <li>
+    {{ b.criado_em.strftime('%d/%m/%Y %H:%M') }} — "{{ b.categoria }}" em {{ b.cidade }} (por {{ b.criado_por_nome or '—' }}): {{ b.resultados_encontrados }} encontrados, {{ b.leads_novos }} novos
+    {% if consultor.is_admin %}
+    <form method="post" action="/prospeccoes/{{ b.id }}/excluir" style="display:inline"
+          onsubmit="return confirm('Excluir esta busca e todos os prospects que ela trouxe? Não dá pra desfazer.');">
+      <button type="submit" class="secundario" style="font-size:.75rem; padding:.1rem .4rem;">Excluir</button>
+    </form>
+    {% endif %}
+  </li>
   {% else %}
   <li>Nenhuma busca ainda.</li>
   {% endfor %}

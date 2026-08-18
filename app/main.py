@@ -26,7 +26,7 @@ from app.auth import (
 from app.db import aplicar_schema, get_connection
 from app.google_places import buscar_empresas, extrair_cidade_uf, extrair_telefone_valido
 
-app = FastAPI(title="Prospecção Engenharia de Clientes")
+app = FastAPI(title="CRM - Engenharia de Clientes")
 app.add_middleware(SessionMiddleware, secret_key=os.environ.get("SESSION_SECRET", "dev-secret-troque-em-producao"))
 templates = Jinja2Templates(directory="app/templates")
 
@@ -105,6 +105,9 @@ def login_submit(request: Request, usuario: str = Form(...), senha: str = Form(.
     if not consultor:
         return templates.TemplateResponse("login.html", {"request": request, "erro": "Usuário ou senha inválidos."})
     request.session["consultor"] = consultor
+    with get_connection() as conn:
+        conn.execute("INSERT INTO logins (consultor_id) VALUES (%s)", (consultor["id"],))
+        conn.commit()
     return RedirectResponse(url="/", status_code=303)
 
 
@@ -122,47 +125,63 @@ def _contexto_base(request: Request, conn) -> dict:
 # --------------------------------------------------------------------- funil
 
 @app.get("/")
-def funil(request: Request, ver: str = "meu"):
+def funil(
+    request: Request,
+    ver: str = "meu",
+    q: str = "",
+    produto_id: str = "",
+    prazo_de: str = "",
+    prazo_ate: str = "",
+):
     redirect = exigir_login(request)
     if redirect:
         return redirect
     consultor = consultor_logado(request)
 
+    condicoes = []
+    parametros = []
+
+    if consultor["is_admin"] and ver != "meu":
+        if ver.isdigit():
+            condicoes.append("p.consultor_id = %s")
+            parametros.append(int(ver))
+    else:
+        condicoes.append("(p.consultor_id = %s OR (p.status = 'fila' AND p.consultor_id IS NULL))")
+        parametros.append(consultor["id"])
+
+    if q.strip():
+        condicoes.append("(p.nome ILIKE %s OR p.decisor_nome ILIKE %s)")
+        termo = f"%{q.strip()}%"
+        parametros.extend([termo, termo])
+
+    if produto_id.isdigit():
+        condicoes.append("p.produto_id = %s")
+        parametros.append(int(produto_id))
+
+    if prazo_de:
+        condicoes.append("p.previsao_fechamento >= %s")
+        parametros.append(prazo_de)
+
+    if prazo_ate:
+        condicoes.append("p.previsao_fechamento <= %s")
+        parametros.append(prazo_ate)
+
+    where_sql = ("WHERE " + " AND ".join(condicoes)) if condicoes else ""
+
     with get_connection() as conn:
         consultores = conn.execute("SELECT id, nome, is_admin FROM consultores ORDER BY nome").fetchall()
+        produtos = conn.execute("SELECT id, nome FROM produtos ORDER BY nome").fetchall()
 
-        if consultor["is_admin"] and ver != "meu":
-            filtro_consultor_id = int(ver) if ver.isdigit() else None
-            if filtro_consultor_id:
-                prospects = conn.execute(
-                    """
-                    SELECT p.*, c.nome AS consultor_nome, pr.nome AS produto_nome FROM prospects p
-                    LEFT JOIN consultores c ON c.id = p.consultor_id
-                    LEFT JOIN produtos pr ON pr.id = p.produto_id
-                    WHERE p.consultor_id = %s ORDER BY p.criado_em DESC
-                    """,
-                    (filtro_consultor_id,),
-                ).fetchall()
-            else:
-                prospects = conn.execute(
-                    """
-                    SELECT p.*, c.nome AS consultor_nome, pr.nome AS produto_nome FROM prospects p
-                    LEFT JOIN consultores c ON c.id = p.consultor_id
-                    LEFT JOIN produtos pr ON pr.id = p.produto_id
-                    ORDER BY p.criado_em DESC
-                    """
-                ).fetchall()
-        else:
-            prospects = conn.execute(
-                """
-                SELECT p.*, c.nome AS consultor_nome, pr.nome AS produto_nome FROM prospects p
-                LEFT JOIN consultores c ON c.id = p.consultor_id
-                LEFT JOIN produtos pr ON pr.id = p.produto_id
-                WHERE p.consultor_id = %s OR (p.status = 'fila' AND p.consultor_id IS NULL)
-                ORDER BY p.criado_em DESC
-                """,
-                (consultor["id"],),
-            ).fetchall()
+        prospects = conn.execute(
+            f"""
+            SELECT p.*, c.nome AS consultor_nome, pr.nome AS produto_nome FROM prospects p
+            LEFT JOIN consultores c ON c.id = p.consultor_id
+            LEFT JOIN produtos pr ON pr.id = p.produto_id
+            {where_sql}
+            ORDER BY p.criado_em DESC
+            """,
+            parametros,
+        ).fetchall()
 
         buscas = conn.execute(
             """
@@ -171,6 +190,7 @@ def funil(request: Request, ver: str = "meu"):
             ORDER BY pr.criado_em DESC LIMIT 10
             """
         ).fetchall()
+        fila_pendente = conn.execute("SELECT COUNT(*) AS total FROM prospects WHERE status = 'fila'").fetchone()["total"]
         contexto = _contexto_base(request, conn)
 
     colunas = {status: [] for status in STATUS_VALIDOS}
@@ -182,8 +202,14 @@ def funil(request: Request, ver: str = "meu"):
         "status_validos": STATUS_VALIDOS,
         "status_label": STATUS_LABEL,
         "consultores": consultores,
+        "produtos": produtos,
         "buscas": buscas,
         "ver": ver,
+        "q": q,
+        "produto_id": produto_id,
+        "prazo_de": prazo_de,
+        "prazo_ate": prazo_ate,
+        "fila_pendente": fila_pendente,
     })
     return templates.TemplateResponse("kanban.html", contexto)
 
@@ -206,6 +232,16 @@ def buscar(request: Request, categoria: str = Form(...), cidade: str = Form(...)
     agora = datetime.now(timezone.utc)
 
     with get_connection() as conn:
+        fila_pendente = conn.execute("SELECT COUNT(*) AS total FROM prospects WHERE status = 'fila'").fetchone()["total"]
+        if fila_pendente > 0:
+            # nova busca só é liberada depois que a fila atual foi 100% contatada (decisão 18/08/2026, Stella)
+            return RedirectResponse(url="/", status_code=303)
+
+        categoria_aquisicao_google_maps = conn.execute(
+            "SELECT id FROM categorias_aquisicao WHERE nome = 'Google Maps'"
+        ).fetchone()
+        categoria_aquisicao_id = categoria_aquisicao_google_maps["id"] if categoria_aquisicao_google_maps else None
+
         prospeccao_id = conn.execute(
             "INSERT INTO prospeccoes (categoria, cidade, criado_em, criado_por_consultor_id) "
             "VALUES (%s, %s, %s, %s) RETURNING id",
@@ -224,12 +260,12 @@ def buscar(request: Request, categoria: str = Form(...), cidade: str = Form(...)
             lugar_cidade, uf = extrair_cidade_uf(lugar.get("formattedAddress"))
             row = conn.execute(
                 """
-                INSERT INTO prospects (prospeccao_id, nome, telefone, endereco, cidade, uf, categoria)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO prospects (prospeccao_id, nome, telefone, endereco, cidade, uf, categoria, categoria_aquisicao_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (telefone) WHERE telefone IS NOT NULL DO NOTHING
                 RETURNING id
                 """,
-                (prospeccao_id, nome, telefone, lugar.get("formattedAddress"), lugar_cidade or cidade, uf, categoria),
+                (prospeccao_id, nome, telefone, lugar.get("formattedAddress"), lugar_cidade or cidade, uf, categoria, categoria_aquisicao_id),
             ).fetchone()
             if row:
                 novos += 1
@@ -243,6 +279,96 @@ def buscar(request: Request, categoria: str = Form(...), cidade: str = Form(...)
     return RedirectResponse(url="/", status_code=303)
 
 
+@app.post("/prospeccoes/{prospeccao_id}/excluir")
+def excluir_prospeccao(request: Request, prospeccao_id: int):
+    """Descarta uma busca (prospecção) inteira e os prospects que ela trouxe —
+    ex.: um lote de teste que não deve contaminar o funil real."""
+    redirect = exigir_admin(request)
+    if redirect:
+        return redirect
+    with get_connection() as conn:
+        conn.execute("DELETE FROM prospects WHERE prospeccao_id = %s", (prospeccao_id,))
+        conn.execute("DELETE FROM prospeccoes WHERE id = %s", (prospeccao_id,))
+        conn.commit()
+    return RedirectResponse(url="/", status_code=303)
+
+
+@app.get("/prospects/novo")
+def prospect_novo_form(request: Request):
+    redirect = exigir_login(request)
+    if redirect:
+        return redirect
+    with get_connection() as conn:
+        produtos = conn.execute("SELECT id, nome FROM produtos ORDER BY nome").fetchall()
+        canais_aquisicao = conn.execute("SELECT id, nome FROM canais_aquisicao ORDER BY nome").fetchall()
+        categorias_aquisicao = conn.execute("SELECT id, nome FROM categorias_aquisicao ORDER BY nome").fetchall()
+        contexto = _contexto_base(request, conn)
+    contexto.update({
+        "produtos": produtos,
+        "canais_aquisicao": canais_aquisicao,
+        "categorias_aquisicao": categorias_aquisicao,
+        "erro": None,
+    })
+    return templates.TemplateResponse("prospect_novo.html", contexto)
+
+
+@app.post("/prospects/novo")
+def prospect_novo_criar(
+    request: Request,
+    nome: str = Form(...),
+    telefone: str = Form(...),
+    cidade: str = Form(""),
+    uf: str = Form(""),
+    categoria: str = Form(""),
+    produto_id: str = Form(""),
+    canal_aquisicao_id: str = Form(""),
+    categoria_aquisicao_id: str = Form(""),
+):
+    redirect = exigir_login(request)
+    if redirect:
+        return redirect
+    consultor = consultor_logado(request)
+
+    telefone_normalizado = extrair_telefone_valido(telefone)
+    if not telefone_normalizado:
+        with get_connection() as conn:
+            produtos = conn.execute("SELECT id, nome FROM produtos ORDER BY nome").fetchall()
+            canais_aquisicao = conn.execute("SELECT id, nome FROM canais_aquisicao ORDER BY nome").fetchall()
+            categorias_aquisicao = conn.execute("SELECT id, nome FROM categorias_aquisicao ORDER BY nome").fetchall()
+            contexto = _contexto_base(request, conn)
+        contexto.update({
+            "produtos": produtos, "canais_aquisicao": canais_aquisicao, "categorias_aquisicao": categorias_aquisicao,
+            "erro": "Telefone inválido — use um número de celular/fixo brasileiro com DDD.",
+        })
+        return templates.TemplateResponse("prospect_novo.html", contexto)
+
+    with get_connection() as conn:
+        existente = conn.execute("SELECT id FROM prospects WHERE telefone = %s", (telefone_normalizado,)).fetchone()
+        if existente:
+            return RedirectResponse(url=f"/prospects/{existente['id']}", status_code=303)
+
+        row = conn.execute(
+            """
+            INSERT INTO prospects (
+                nome, telefone, cidade, uf, categoria, consultor_id, status,
+                produto_id, canal_aquisicao_id, categoria_aquisicao_id, criado_por_consultor_id
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, 'fila', %s, %s, %s, %s)
+            RETURNING id
+            """,
+            (
+                nome.strip(), telefone_normalizado, cidade.strip() or None, (uf.strip().upper() or None),
+                categoria.strip() or None, consultor["id"],
+                int(produto_id) if produto_id else None,
+                int(canal_aquisicao_id) if canal_aquisicao_id else None,
+                int(categoria_aquisicao_id) if categoria_aquisicao_id else None,
+                consultor["id"],
+            ),
+        ).fetchone()
+        conn.commit()
+    return RedirectResponse(url=f"/prospects/{row['id']}", status_code=303)
+
+
 # ---------------------------------------------------------------- prospect
 
 @app.get("/prospects/{prospect_id}")
@@ -254,11 +380,14 @@ def prospect_detalhe(request: Request, prospect_id: int):
     with get_connection() as conn:
         prospect = conn.execute(
             """
-            SELECT p.*, c.nome AS consultor_nome, pr.nome AS produto_nome, m.nome AS motivo_perda_nome
+            SELECT p.*, c.nome AS consultor_nome, pr.nome AS produto_nome, m.nome AS motivo_perda_nome,
+                   ca.nome AS canal_aquisicao_nome, cat.nome AS categoria_aquisicao_nome
             FROM prospects p
             LEFT JOIN consultores c ON c.id = p.consultor_id
             LEFT JOIN produtos pr ON pr.id = p.produto_id
             LEFT JOIN motivos_perda m ON m.id = p.motivo_perda_id
+            LEFT JOIN canais_aquisicao ca ON ca.id = p.canal_aquisicao_id
+            LEFT JOIN categorias_aquisicao cat ON cat.id = p.categoria_aquisicao_id
             WHERE p.id = %s
             """,
             (prospect_id,),
@@ -275,6 +404,8 @@ def prospect_detalhe(request: Request, prospect_id: int):
         consultores = conn.execute("SELECT id, nome FROM consultores ORDER BY nome").fetchall()
         produtos = conn.execute("SELECT id, nome FROM produtos ORDER BY nome").fetchall()
         motivos_perda = conn.execute("SELECT id, nome FROM motivos_perda ORDER BY nome").fetchall()
+        canais_aquisicao = conn.execute("SELECT id, nome FROM canais_aquisicao ORDER BY nome").fetchall()
+        categorias_aquisicao = conn.execute("SELECT id, nome FROM categorias_aquisicao ORDER BY nome").fetchall()
         contexto = _contexto_base(request, conn)
 
     contexto.update({
@@ -283,6 +414,8 @@ def prospect_detalhe(request: Request, prospect_id: int):
         "consultores": consultores,
         "produtos": produtos,
         "motivos_perda": motivos_perda,
+        "canais_aquisicao": canais_aquisicao,
+        "categorias_aquisicao": categorias_aquisicao,
         "status_validos": STATUS_VALIDOS,
         "status_label": STATUS_LABEL,
         "tipo_label": TIPO_ATIVIDADE_LABEL,
@@ -324,19 +457,38 @@ def atualizar_negocio(
     valor_orcamento: str = Form(""),
     previsao_fechamento: str = Form(""),
     observacoes_produto: str = Form(""),
+    canal_aquisicao_id: str = Form(""),
+    categoria_aquisicao_id: str = Form(""),
+    decisor_nome: str = Form(""),
+    decisor_telefone: str = Form(""),
+    decisor_email: str = Form(""),
+    decisor_endereco: str = Form(""),
+    decisor_aniversario: str = Form(""),
+    decisor_redes_sociais: str = Form(""),
 ):
     produto_val = int(produto_id) if produto_id else None
     valor_val = _parsear_valor_brl(valor_orcamento)
     previsao_val = previsao_fechamento or None
+    canal_val = int(canal_aquisicao_id) if canal_aquisicao_id else None
+    categoria_val = int(categoria_aquisicao_id) if categoria_aquisicao_id else None
     with get_connection() as conn:
         conn.execute(
             """
             UPDATE prospects
             SET produto_id = %s, valor_orcamento = %s, previsao_fechamento = %s,
-                observacoes_produto = %s, atualizado_em = NOW()
+                observacoes_produto = %s, canal_aquisicao_id = %s, categoria_aquisicao_id = %s,
+                decisor_nome = %s, decisor_telefone = %s, decisor_email = %s,
+                decisor_endereco = %s, decisor_aniversario = %s, decisor_redes_sociais = %s,
+                atualizado_em = NOW()
             WHERE id = %s
             """,
-            (produto_val, valor_val, previsao_val, observacoes_produto.strip() or None, prospect_id),
+            (
+                produto_val, valor_val, previsao_val, observacoes_produto.strip() or None,
+                canal_val, categoria_val,
+                decisor_nome.strip() or None, decisor_telefone.strip() or None, decisor_email.strip() or None,
+                decisor_endereco.strip() or None, decisor_aniversario or None, decisor_redes_sociais.strip() or None,
+                prospect_id,
+            ),
         )
         conn.commit()
     return RedirectResponse(url=f"/prospects/{prospect_id}", status_code=303)
@@ -454,7 +606,11 @@ def consultores_lista(request: Request):
         return redirect
     with get_connection() as conn:
         consultores = conn.execute(
-            "SELECT id, nome, usuario, is_admin, criado_em FROM consultores ORDER BY nome"
+            """
+            SELECT c.id, c.nome, c.usuario, c.is_admin, c.criado_em,
+                   (SELECT MAX(criado_em) FROM logins l WHERE l.consultor_id = c.id) AS ultimo_acesso
+            FROM consultores c ORDER BY c.nome
+            """
         ).fetchall()
         contexto = _contexto_base(request, conn)
     contexto["consultores"] = consultores
@@ -479,6 +635,38 @@ def consultores_criar(
         )
         conn.commit()
     return RedirectResponse(url="/consultores", status_code=303)
+
+
+@app.post("/consultores/{consultor_id}/senha")
+def consultores_resetar_senha(request: Request, consultor_id: int, nova_senha: str = Form(...)):
+    redirect = exigir_admin(request)
+    if redirect:
+        return redirect
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE consultores SET senha_hash = %s WHERE id = %s",
+            (gerar_hash(nova_senha), consultor_id),
+        )
+        conn.commit()
+    return RedirectResponse(url="/consultores", status_code=303)
+
+
+@app.get("/log-acesso")
+def log_acesso(request: Request):
+    redirect = exigir_admin(request)
+    if redirect:
+        return redirect
+    with get_connection() as conn:
+        logins = conn.execute(
+            """
+            SELECT l.criado_em, c.nome, c.usuario
+            FROM logins l JOIN consultores c ON c.id = l.consultor_id
+            ORDER BY l.criado_em DESC LIMIT 200
+            """
+        ).fetchall()
+        contexto = _contexto_base(request, conn)
+    contexto["logins"] = logins
+    return templates.TemplateResponse("log_acesso.html", contexto)
 
 
 # --------------------------------------------------------------------- admin
@@ -541,6 +729,22 @@ def admin_dashboard(request: Request):
             """
         ).fetchall()
 
+        por_canal_aquisicao = conn.execute(
+            """
+            SELECT ca.nome, COUNT(*) AS total, COUNT(*) FILTER (WHERE p.status = 'ganho') AS ganhos
+            FROM prospects p JOIN canais_aquisicao ca ON ca.id = p.canal_aquisicao_id
+            GROUP BY ca.nome ORDER BY total DESC
+            """
+        ).fetchall()
+
+        por_categoria_aquisicao = conn.execute(
+            """
+            SELECT cat.nome, COUNT(*) AS total, COUNT(*) FILTER (WHERE p.status = 'ganho') AS ganhos
+            FROM prospects p JOIN categorias_aquisicao cat ON cat.id = p.categoria_aquisicao_id
+            GROUP BY cat.nome ORDER BY total DESC
+            """
+        ).fetchall()
+
         contexto = _contexto_base(request, conn)
 
     contexto.update({
@@ -552,6 +756,8 @@ def admin_dashboard(request: Request):
         "prospects_por_consultor": prospects_por_consultor,
         "valor_por_status": valor_por_status,
         "motivos_perda_ranking": motivos_perda_ranking,
+        "por_canal_aquisicao": por_canal_aquisicao,
+        "por_categoria_aquisicao": por_categoria_aquisicao,
     })
     return templates.TemplateResponse("admin.html", contexto)
 
@@ -602,6 +808,52 @@ def motivos_perda_criar(request: Request, nome: str = Form(...)):
         conn.execute("INSERT INTO motivos_perda (nome) VALUES (%s) ON CONFLICT (nome) DO NOTHING", (nome.strip(),))
         conn.commit()
     return RedirectResponse(url="/motivos-perda", status_code=303)
+
+
+@app.get("/canais-aquisicao")
+def canais_aquisicao_lista(request: Request):
+    redirect = exigir_admin(request)
+    if redirect:
+        return redirect
+    with get_connection() as conn:
+        canais = conn.execute("SELECT id, nome, criado_em FROM canais_aquisicao ORDER BY nome").fetchall()
+        contexto = _contexto_base(request, conn)
+    contexto["canais"] = canais
+    return templates.TemplateResponse("canais_aquisicao.html", contexto)
+
+
+@app.post("/canais-aquisicao")
+def canais_aquisicao_criar(request: Request, nome: str = Form(...)):
+    redirect = exigir_admin(request)
+    if redirect:
+        return redirect
+    with get_connection() as conn:
+        conn.execute("INSERT INTO canais_aquisicao (nome) VALUES (%s) ON CONFLICT (nome) DO NOTHING", (nome.strip(),))
+        conn.commit()
+    return RedirectResponse(url="/canais-aquisicao", status_code=303)
+
+
+@app.get("/categorias-aquisicao")
+def categorias_aquisicao_lista(request: Request):
+    redirect = exigir_admin(request)
+    if redirect:
+        return redirect
+    with get_connection() as conn:
+        categorias = conn.execute("SELECT id, nome, criado_em FROM categorias_aquisicao ORDER BY nome").fetchall()
+        contexto = _contexto_base(request, conn)
+    contexto["categorias"] = categorias
+    return templates.TemplateResponse("categorias_aquisicao.html", contexto)
+
+
+@app.post("/categorias-aquisicao")
+def categorias_aquisicao_criar(request: Request, nome: str = Form(...)):
+    redirect = exigir_admin(request)
+    if redirect:
+        return redirect
+    with get_connection() as conn:
+        conn.execute("INSERT INTO categorias_aquisicao (nome) VALUES (%s) ON CONFLICT (nome) DO NOTHING", (nome.strip(),))
+        conn.commit()
+    return RedirectResponse(url="/categorias-aquisicao", status_code=303)
 
 
 @app.get("/export.csv")

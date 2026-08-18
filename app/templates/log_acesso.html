@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Log de acesso{% endblock %}
+{% block content %}
+<h1>Log de acesso</h1>
+<p style="font-size:.9rem; color:#555;">Últimos 200 logins no sistema.</p>
+
+<table>
+  <thead><tr><th>Data/hora</th><th>Usuário</th><th>Login</th></tr></thead>
+  <tbody>
+    {% for l in logins %}
+    <tr><td>{{ l.criado_em.strftime('%d/%m/%Y %H:%M') }}</td><td>{{ l.nome }}</td><td>{{ l.usuario }}</td></tr>
+    {% else %}
+    <tr><td colspan="3">Nenhum acesso registrado ainda.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

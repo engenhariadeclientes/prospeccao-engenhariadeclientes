@@ -20,9 +20,9 @@
 </div>
 {% endfor %}
 
-<h2 style="font-size:1.1rem">Prospects e negócios por consultor</h2>
+<h2 style="font-size:1.1rem">Prospects e negócios por usuário</h2>
 <table>
-  <thead><tr><th>Consultor</th><th>Total de prospects</th><th>Ganhos</th><th>Taxa de ganho</th><th>Valor ganho</th></tr></thead>
+  <thead><tr><th>Usuário</th><th>Total de prospects</th><th>Ganhos</th><th>Taxa de ganho</th><th>Valor ganho</th></tr></thead>
   <tbody>
     {% for r in prospects_por_consultor %}
     <tr>
@@ -50,9 +50,9 @@
   </tbody>
 </table>
 
-<h2 style="font-size:1.1rem">Atividade por consultor (últimos 30 dias)</h2>
+<h2 style="font-size:1.1rem">Atividade por usuário (últimos 30 dias)</h2>
 <table>
-  <thead><tr><th>Consultor</th><th>Ligações</th><th>WhatsApp</th><th>Anotações</th><th>Tarefas concluídas</th><th>Total</th></tr></thead>
+  <thead><tr><th>Usuário</th><th>Ligações</th><th>WhatsApp</th><th>Anotações</th><th>Tarefas concluídas</th><th>Total</th></tr></thead>
   <tbody>
     {% for r in atividade_por_consultor %}
     <tr>
@@ -65,6 +65,30 @@
     </tr>
     {% else %}
     <tr><td colspan="6">Nenhuma atividade nos últimos 30 dias.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2 style="font-size:1.1rem">Por canal de aquisição</h2>
+<table>
+  <thead><tr><th>Canal</th><th>Total</th><th>Ganhos</th></tr></thead>
+  <tbody>
+    {% for r in por_canal_aquisicao %}
+    <tr><td>{{ r.nome }}</td><td>{{ r.total }}</td><td>{{ r.ganhos }}</td></tr>
+    {% else %}
+    <tr><td colspan="3">Nenhum prospect com canal de aquisição registrado.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2 style="font-size:1.1rem">Por categoria de aquisição</h2>
+<table>
+  <thead><tr><th>Categoria</th><th>Total</th><th>Ganhos</th></tr></thead>
+  <tbody>
+    {% for r in por_categoria_aquisicao %}
+    <tr><td>{{ r.nome }}</td><td>{{ r.total }}</td><td>{{ r.ganhos }}</td></tr>
+    {% else %}
+    <tr><td colspan="3">Nenhum prospect com categoria de aquisição registrada.</td></tr>
     {% endfor %}
   </tbody>
 </table>

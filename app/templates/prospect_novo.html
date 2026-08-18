@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Novo negócio{% endblock %}
+{% block content %}
+<p><a href="/">← Voltar pro funil</a></p>
+<h1>Novo negócio</h1>
+{% if erro %}<p class="erro">{{ erro }}</p>{% endif %}
+
+<form method="post" action="/prospects/novo" style="display:flex; flex-direction:column; gap:.75rem; max-width:460px;">
+  <label>Nome da empresa:
+    <input type="text" name="nome" required style="width:100%;">
+  </label>
+  <label>Telefone:
+    <input type="text" name="telefone" placeholder="(47) 99999-9999" required style="width:100%;">
+  </label>
+  <div style="display:grid; grid-template-columns:2fr 1fr; gap:.75rem;">
+    <label>Cidade:
+      <input type="text" name="cidade" style="width:100%;">
+    </label>
+    <label>UF:
+      <input type="text" name="uf" maxlength="2" style="width:100%; text-transform:uppercase;">
+    </label>
+  </div>
+  <label>Segmento (categoria do negócio):
+    <input type="text" name="categoria" placeholder="Ex.: administradora de condomínios" style="width:100%;">
+  </label>
+  <label>Produto:
+    <select name="produto_id" style="width:100%;">
+      <option value="">Selecione</option>
+      {% for p in produtos %}
+      <option value="{{ p.id }}">{{ p.nome }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <div class="grid-2" style="display:grid; grid-template-columns:1fr 1fr; gap:.75rem;">
+    <label>Canal de aquisição:
+      <select name="canal_aquisicao_id" style="width:100%;">
+        <option value="">Selecione</option>
+        {% for c in canais_aquisicao %}
+        <option value="{{ c.id }}">{{ c.nome }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Categoria de aquisição:
+      <select name="categoria_aquisicao_id" style="width:100%;">
+        <option value="">Selecione</option>
+        {% for c in categorias_aquisicao %}
+        <option value="{{ c.id }}">{{ c.nome }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </div>
+  <button type="submit">Cadastrar</button>
+</form>
+{% endblock %}

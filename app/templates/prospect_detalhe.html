@@ -49,9 +49,9 @@
   </script>
 
   <form method="post" action="/prospects/{{ prospect.id }}/consultor">
-    <label>Consultor responsável:
+    <label>Responsável:
       <select name="consultor_id" onchange="this.form.submit()">
-        <option value="">Sem consultor</option>
+        <option value="">Sem responsável</option>
         {% for c in consultores %}
         <option value="{{ c.id }}" {{ 'selected' if prospect.consultor_id == c.id else '' }}>{{ c.nome }}</option>
         {% endfor %}
@@ -79,9 +79,50 @@
         <input type="date" name="previsao_fechamento" value="{{ prospect.previsao_fechamento.isoformat() if prospect.previsao_fechamento else '' }}">
       </label>
     </div>
+    <div class="grid-2">
+      <label>Canal de aquisição:
+        <select name="canal_aquisicao_id" style="width:100%;">
+          <option value="">Selecione</option>
+          {% for c in canais_aquisicao %}
+          <option value="{{ c.id }}" {{ 'selected' if prospect.canal_aquisicao_id == c.id else '' }}>{{ c.nome }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Categoria de aquisição:
+        <select name="categoria_aquisicao_id" style="width:100%;">
+          <option value="">Selecione</option>
+          {% for c in categorias_aquisicao %}
+          <option value="{{ c.id }}" {{ 'selected' if prospect.categoria_aquisicao_id == c.id else '' }}>{{ c.nome }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
     <label>Anotações sobre o produto/negócio:
       <textarea name="observacoes_produto" rows="4" style="width:100%;">{{ prospect.observacoes_produto or '' }}</textarea>
     </label>
+
+    <h3 style="font-size:1rem; margin:.5rem 0 0;">Decisor</h3>
+    <div class="grid-2">
+      <label>Nome:
+        <input type="text" name="decisor_nome" value="{{ prospect.decisor_nome or '' }}">
+      </label>
+      <label>Telefone:
+        <input type="text" name="decisor_telefone" value="{{ prospect.decisor_telefone or '' }}">
+      </label>
+      <label>E-mail:
+        <input type="email" name="decisor_email" value="{{ prospect.decisor_email or '' }}">
+      </label>
+      <label>Aniversário:
+        <input type="date" name="decisor_aniversario" value="{{ prospect.decisor_aniversario.isoformat() if prospect.decisor_aniversario else '' }}">
+      </label>
+    </div>
+    <label>Endereço:
+      <input type="text" name="decisor_endereco" value="{{ prospect.decisor_endereco or '' }}" style="width:100%;">
+    </label>
+    <label>Redes sociais:
+      <input type="text" name="decisor_redes_sociais" value="{{ prospect.decisor_redes_sociais or '' }}" placeholder="@instagram, linkedin.com/in/..." style="width:100%;">
+    </label>
+
     <button type="submit" style="align-self:flex-start;">Salvar negócio</button>
   </form>
 </div>

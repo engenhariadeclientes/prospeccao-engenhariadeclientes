@@ -1,19 +1,31 @@
 {% extends "base.html" %}
-{% block title %}Consultores{% endblock %}
+{% block title %}Usuários{% endblock %}
 {% block content %}
-<h1>Consultores</h1>
+<h1>Usuários</h1>
 
 <table>
-  <thead><tr><th>Nome</th><th>Usuário</th><th>Admin</th><th>Desde</th></tr></thead>
+  <thead><tr><th>Nome</th><th>Usuário</th><th>Admin</th><th>Desde</th><th>Último acesso</th><th>Redefinir senha</th></tr></thead>
   <tbody>
     {% for c in consultores %}
-    <tr><td>{{ c.nome }}</td><td>{{ c.usuario }}</td><td>{{ 'Sim' if c.is_admin else '' }}</td><td>{{ c.criado_em.strftime('%d/%m/%Y') }}</td></tr>
+    <tr>
+      <td>{{ c.nome }}</td>
+      <td>{{ c.usuario }}</td>
+      <td>{{ 'Sim' if c.is_admin else '' }}</td>
+      <td>{{ c.criado_em.strftime('%d/%m/%Y') }}</td>
+      <td>{{ c.ultimo_acesso.strftime('%d/%m/%Y %H:%M') if c.ultimo_acesso else 'nunca' }}</td>
+      <td>
+        <form method="post" action="/consultores/{{ c.id }}/senha" style="display:flex; gap:.3rem;">
+          <input type="password" name="nova_senha" placeholder="Nova senha" minlength="6" required style="font-size:.8rem; padding:.3rem;">
+          <button type="submit" style="font-size:.75rem; padding:.2rem .5rem;">Redefinir</button>
+        </form>
+      </td>
+    </tr>
     {% endfor %}
   </tbody>
 </table>
 
 <div class="card" style="max-width:360px;">
-  <h2 style="font-size:1.1rem; margin-top:0;">Adicionar consultor</h2>
+  <h2 style="font-size:1.1rem; margin-top:0;">Adicionar usuário</h2>
   <form method="post" action="/consultores" style="display:flex; flex-direction:column; gap:.75rem;">
     <input type="text" name="nome" placeholder="Nome" required>
     <input type="text" name="usuario" placeholder="Usuário" required>
