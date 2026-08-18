@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>{% block title %}Prospecção{% endblock %} — Engenharia de Clientes</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 1100px; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; }
+    h1 { font-size: 1.4rem; }
+    a { color: #1a5fb4; }
+    nav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid #ddd; }
+    nav .links { display: flex; gap: 1rem; align-items: center; font-size: .9rem; }
+    input, select, textarea { padding: .5rem; border: 1px solid #ccc; border-radius: 4px; font-family: inherit; }
+    button, .botao { padding: .5rem 1rem; background: #1a5fb4; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: .9rem; text-decoration: none; display: inline-block; }
+    button.secundario, .botao.secundario { background: #666; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 1.5rem; }
+    th, td { text-align: left; padding: .4rem .5rem; border-bottom: 1px solid #eee; font-size: .9rem; }
+    .card { border: 1px solid #ddd; border-radius: 6px; padding: 1rem; margin-bottom: 1rem; }
+    .erro { color: #c01c28; margin-bottom: 1rem; }
+  </style>
+</head>
+<body>
+  {% if consultor %}
+  <nav>
+    <strong>Prospecção — Engenharia de Clientes</strong>
+    <div class="links">
+      <span>{{ consultor.nome }}</span>
+      <a href="/">Funil</a>
+      <a href="/agenda">Agenda{% if pendencias %} 🔔 {{ pendencias }}{% endif %}</a>
+      {% if consultor.is_admin %}
+      <a href="/admin">Admin</a>
+      <a href="/consultores">Consultores</a>
+      {% endif %}
+      <a href="/export.csv">Exportar CSV</a>
+      <a href="/logout">Sair</a>
+    </div>
+  </nav>
+  {% endif %}
+  {% block content %}{% endblock %}
+</body>
+</html>

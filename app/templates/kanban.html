@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Funil{% endblock %}
+{% block content %}
+<style>
+  form.busca { display: flex; gap: .5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+  form.busca input[name="categoria"] { flex: 2; min-width: 220px; }
+  form.busca input[name="cidade"] { flex: 1; min-width: 160px; }
+  .filtros { margin-bottom: 1rem; font-size: .9rem; }
+  .board { display: flex; gap: 1rem; overflow-x: auto; padding-bottom: 1rem; }
+  .coluna { flex: 0 0 260px; background: #f7f7f8; border-radius: 8px; padding: .75rem; }
+  .coluna h3 { font-size: .95rem; margin: 0 0 .5rem 0; display: flex; justify-content: space-between; }
+  .prospect-card { background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: .6rem; margin-bottom: .5rem; font-size: .85rem; }
+  .prospect-card .nome { font-weight: 600; display: block; margin-bottom: .2rem; }
+  .prospect-card .meta { color: #666; font-size: .8rem; margin-bottom: .4rem; }
+  .prospect-card a { font-size: .8rem; }
+  .prospect-card button.assumir { font-size: .75rem; padding: .2rem .5rem; margin-left: .4rem; }
+  .buscas-recentes { font-size: .85rem; color: #555; }
+</style>
+
+<form class="busca" method="post" action="/buscar">
+  <input type="text" name="categoria" placeholder="Categoria (ex.: garantidora de receita)" required>
+  <input type="text" name="cidade" placeholder="Cidade (ex.: Blumenau, SC)" required>
+  <input type="number" name="max_resultados" value="40" min="1" max="120" title="Máximo de resultados">
+  <button type="submit">Buscar</button>
+</form>
+
+{% if consultor.is_admin %}
+<div class="filtros">
+  Ver funil de:
+  <select onchange="window.location.href='/?ver='+this.value">
+    <option value="meu" {{ 'selected' if ver == 'meu' else '' }}>Meu funil</option>
+    <option value="" {{ 'selected' if ver == '' else '' }}>Todos</option>
+    {% for c in consultores %}
+    <option value="{{ c.id }}" {{ 'selected' if ver == c.id|string else '' }}>{{ c.nome }}</option>
+    {% endfor %}
+  </select>
+</div>
+{% endif %}
+
+<div class="board">
+  {% for status in status_validos %}
+  <div class="coluna">
+    <h3>{{ status_label[status] }} <span>{{ colunas[status]|length }}</span></h3>
+    {% for p in colunas[status] %}
+    <div class="prospect-card">
+      <span class="nome">{{ p.nome or 'Sem nome' }}</span>
+      <span class="meta">{{ p.cidade or '—' }}{% if p.uf %}/{{ p.uf }}{% endif %} · {{ p.categoria }}</span>
+      <span class="meta">📞 <a href="tel:{{ p.telefone }}">{{ p.telefone }}</a></span>
+      <span class="meta">
+        {{ p.consultor_nome or 'sem consultor' }}
+        {% if not p.consultor_nome %}
+        <form method="post" action="/prospects/{{ p.id }}/assumir" style="display:inline">
+          <button type="submit" class="assumir">Assumir</button>
+        </form>
+        {% endif %}
+      </span>
+      <a href="/prospects/{{ p.id }}">Ver detalhes →</a>
+    </div>
+    {% else %}
+    <p style="font-size:.8rem; color:#999;">Vazio</p>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</div>
+
+<h2 style="font-size:1.1rem">Buscas recentes</h2>
+<ul class="buscas-recentes">
+  {% for b in buscas %}
+  <li>{{ b.criado_em.strftime('%d/%m/%Y %H:%M') }} — "{{ b.categoria }}" em {{ b.cidade }} (por {{ b.criado_por_nome or '—' }}): {{ b.resultados_encontrados }} encontrados, {{ b.leads_novos }} novos</li>
+  {% else %}
+  <li>Nenhuma busca ainda.</li>
+  {% endfor %}
+</ul>
+{% endblock %}

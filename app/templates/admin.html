@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Admin{% endblock %}
+{% block content %}
+<style>
+  .barra-fundo { background: #eee; border-radius: 4px; overflow: hidden; height: 20px; width: 200px; }
+  .barra { background: #1a5fb4; height: 100%; }
+  .linha-funil { display: flex; align-items: center; gap: .6rem; margin-bottom: .5rem; font-size: .9rem; }
+  .linha-funil .rotulo { width: 120px; }
+  .linha-funil .valor { width: 40px; text-align: right; }
+</style>
+<h1>Visão administrativa</h1>
+
+<h2 style="font-size:1.1rem">Funil (estágios)</h2>
+{% for status in status_validos %}
+<div class="linha-funil">
+  <span class="rotulo">{{ status_label[status] }}</span>
+  <div class="barra-fundo"><div class="barra" style="width:{{ (funil_counts.get(status, 0) / total_prospects * 100)|round }}%"></div></div>
+  <span class="valor">{{ funil_counts.get(status, 0) }}</span>
+</div>
+{% endfor %}
+
+<h2 style="font-size:1.1rem">Prospects e negócios por consultor</h2>
+<table>
+  <thead><tr><th>Consultor</th><th>Total de prospects</th><th>Fechados</th><th>Taxa de fechamento</th></tr></thead>
+  <tbody>
+    {% for r in prospects_por_consultor %}
+    <tr>
+      <td>{{ r.nome }}</td>
+      <td>{{ r.total }}</td>
+      <td>{{ r.fechados }}</td>
+      <td>{{ ((r.fechados / r.total * 100)|round(1)) if r.total else 0 }}%</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4">Nenhum prospect atribuído ainda.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2 style="font-size:1.1rem">Atividade por consultor (últimos 30 dias)</h2>
+<table>
+  <thead><tr><th>Consultor</th><th>Ligações</th><th>WhatsApp</th><th>Anotações</th><th>Tarefas concluídas</th><th>Total</th></tr></thead>
+  <tbody>
+    {% for r in atividade_por_consultor %}
+    <tr>
+      <td>{{ r.nome }}</td>
+      <td>{{ r.ligacoes }}</td>
+      <td>{{ r.whatsapps }}</td>
+      <td>{{ r.anotacoes }}</td>
+      <td>{{ r.tarefas_concluidas }}</td>
+      <td>{{ r.total }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6">Nenhuma atividade nos últimos 30 dias.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

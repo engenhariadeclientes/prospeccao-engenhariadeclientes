@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Consultores{% endblock %}
+{% block content %}
+<h1>Consultores</h1>
+
+<table>
+  <thead><tr><th>Nome</th><th>Usuário</th><th>Admin</th><th>Desde</th></tr></thead>
+  <tbody>
+    {% for c in consultores %}
+    <tr><td>{{ c.nome }}</td><td>{{ c.usuario }}</td><td>{{ 'Sim' if c.is_admin else '' }}</td><td>{{ c.criado_em.strftime('%d/%m/%Y') }}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="card" style="max-width:360px;">
+  <h2 style="font-size:1.1rem; margin-top:0;">Adicionar consultor</h2>
+  <form method="post" action="/consultores" style="display:flex; flex-direction:column; gap:.75rem;">
+    <input type="text" name="nome" placeholder="Nome" required>
+    <input type="text" name="usuario" placeholder="Usuário" required>
+    <input type="password" name="senha" placeholder="Senha" required minlength="6">
+    <label style="font-size:.9rem;"><input type="checkbox" name="is_admin" value="1"> É administrador?</label>
+    <button type="submit">Adicionar</button>
+  </form>
+</div>
+{% endblock %}

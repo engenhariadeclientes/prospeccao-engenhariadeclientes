@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}{{ prospect.nome or 'Prospect' }}{% endblock %}
+{% block content %}
+<style>
+  .timeline { list-style: none; padding: 0; }
+  .timeline li { border-left: 3px solid #1a5fb4; padding: .4rem 0 .4rem 1rem; margin-bottom: .6rem; }
+  .timeline .tipo { font-weight: 600; }
+  .timeline .quando { color: #888; font-size: .8rem; }
+  .timeline .concluida { text-decoration: line-through; color: #999; }
+  #campos-resultado, #campos-agendada { display: none; }
+</style>
+<p><a href="/">← Voltar pro funil</a></p>
+<h1>{{ prospect.nome or 'Sem nome' }}</h1>
+
+<div class="card">
+  <p><strong>Telefone:</strong> <a href="tel:{{ prospect.telefone }}">{{ prospect.telefone }}</a></p>
+  <p><strong>Endereço:</strong> {{ prospect.endereco or '—' }}</p>
+  <p><strong>Categoria:</strong> {{ prospect.categoria }}</p>
+
+  <form method="post" action="/prospects/{{ prospect.id }}/status" style="display:inline-block; margin-right:1rem;">
+    <label>Status:
+      <select name="status" onchange="this.form.submit()">
+        {% for s in status_validos %}
+        <option value="{{ s }}" {{ 'selected' if s == prospect.status else '' }}>{{ status_label[s] }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </form>
+
+  <form method="post" action="/prospects/{{ prospect.id }}/consultor" style="display:inline-block;">
+    <label>Consultor:
+      <select name="consultor_id" onchange="this.form.submit()">
+        <option value="">Sem consultor</option>
+        {% for c in consultores %}
+        <option value="{{ c.id }}" {{ 'selected' if prospect.consultor_id == c.id else '' }}>{{ c.nome }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </form>
+</div>
+
+<div class="card">
+  <h2 style="font-size:1.1rem; margin-top:0;">Registrar na linha do tempo</h2>
+  <form method="post" action="/prospects/{{ prospect.id }}/atividades" style="display:flex; flex-direction:column; gap:.6rem; max-width:420px;"
+        onsubmit="return true;">
+    <label>Tipo:
+      <select name="tipo" id="campo-tipo" onchange="atualizarCampos()">
+        <option value="ligacao">Ligação</option>
+        <option value="whatsapp">WhatsApp</option>
+        <option value="anotacao">Anotação</option>
+        <option value="tarefa">Tarefa (agendar)</option>
+      </select>
+    </label>
+    <div id="campos-resultado">
+      <label>Resultado:
+        <select name="resultado">
+          {% for r in resultado_validos %}
+          <option value="{{ r }}">{{ r.replace('_', ' ')|capitalize }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <div id="campos-agendada">
+      <label>Data/hora agendada:
+        <input type="datetime-local" name="data_agendada">
+      </label>
+    </div>
+    <textarea name="nota" placeholder="Nota" rows="3"></textarea>
+    <button type="submit">Salvar</button>
+  </form>
+  <script>
+    function atualizarCampos() {
+      var tipo = document.getElementById('campo-tipo').value;
+      document.getElementById('campos-resultado').style.display = (tipo === 'ligacao' || tipo === 'whatsapp') ? 'block' : 'none';
+      document.getElementById('campos-agendada').style.display = (tipo === 'tarefa') ? 'block' : 'none';
+    }
+    atualizarCampos();
+  </script>
+</div>
+
+<h2 style="font-size:1.1rem">Linha do tempo</h2>
+<ul class="timeline">
+  {% for a in timeline %}
+  <li>
+    <span class="tipo {{ 'concluida' if a.tipo == 'tarefa' and a.concluida else '' }}">{{ tipo_label[a.tipo] }}</span>
+    {% if a.resultado %} — {{ a.resultado.replace('_', ' ') }}{% endif %}
+    {% if a.tipo == 'tarefa' and a.data_agendada %} — agendada para {{ a.data_agendada.strftime('%d/%m/%Y %H:%M') }}{% endif %}
+    <span class="quando">· {{ a.criado_em.strftime('%d/%m/%Y %H:%M') }} · {{ a.consultor_nome or '—' }}</span>
+    {% if a.nota %}<p>{{ a.nota }}</p>{% endif %}
+    {% if a.tipo == 'tarefa' and not a.concluida %}
+    <form method="post" action="/atividades/{{ a.id }}/concluir">
+      <input type="hidden" name="voltar" value="/prospects/{{ prospect.id }}">
+      <button type="submit" class="secundario" style="font-size:.75rem; padding:.2rem .5rem;">Concluir</button>
+    </form>
+    {% endif %}
+  </li>
+  {% else %}
+  <li>Nenhuma atividade registrada ainda.</li>
+  {% endfor %}
+</ul>
+{% endblock %}

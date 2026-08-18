@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Agenda{% endblock %}
+{% block content %}
+<style>
+  .tarefa { display: flex; justify-content: space-between; align-items: center; border: 1px solid #ddd; border-radius: 6px; padding: .6rem .8rem; margin-bottom: .5rem; font-size: .9rem; }
+  .tarefa .info { flex: 1; }
+  .tarefa .quando { color: #888; font-size: .8rem; }
+  h2.secao { font-size: 1rem; margin-top: 1.5rem; }
+</style>
+<h1>Agenda</h1>
+
+<h2 class="secao" style="color:#c01c28;">Atrasadas ({{ atrasadas|length }})</h2>
+{% for t in atrasadas %}
+<div class="tarefa">
+  <div class="info">
+    <a href="/prospects/{{ t.prospect_id }}">{{ t.prospect_nome or 'Sem nome' }}</a> — {{ t.nota or 'sem nota' }}
+    <div class="quando">{{ t.data_agendada.strftime('%d/%m/%Y %H:%M') if t.data_agendada else 'sem data' }} · {{ t.consultor_nome or '—' }}</div>
+  </div>
+  <form method="post" action="/atividades/{{ t.id }}/concluir">
+    <input type="hidden" name="voltar" value="/agenda">
+    <button type="submit">Concluir</button>
+  </form>
+</div>
+{% else %}
+<p style="color:#999; font-size:.9rem;">Nada atrasado.</p>
+{% endfor %}
+
+<h2 class="secao">Hoje ({{ hoje|length }})</h2>
+{% for t in hoje %}
+<div class="tarefa">
+  <div class="info">
+    <a href="/prospects/{{ t.prospect_id }}">{{ t.prospect_nome or 'Sem nome' }}</a> — {{ t.nota or 'sem nota' }}
+    <div class="quando">{{ t.data_agendada.strftime('%H:%M') if t.data_agendada else '' }} · {{ t.consultor_nome or '—' }}</div>
+  </div>
+  <form method="post" action="/atividades/{{ t.id }}/concluir">
+    <input type="hidden" name="voltar" value="/agenda">
+    <button type="submit">Concluir</button>
+  </form>
+</div>
+{% else %}
+<p style="color:#999; font-size:.9rem;">Nada pra hoje.</p>
+{% endfor %}
+
+<h2 class="secao">Próximas ({{ proximas|length }})</h2>
+{% for t in proximas %}
+<div class="tarefa">
+  <div class="info">
+    <a href="/prospects/{{ t.prospect_id }}">{{ t.prospect_nome or 'Sem nome' }}</a> — {{ t.nota or 'sem nota' }}
+    <div class="quando">{{ t.data_agendada.strftime('%d/%m/%Y %H:%M') if t.data_agendada else 'sem data' }} · {{ t.consultor_nome or '—' }}</div>
+  </div>
+  <form method="post" action="/atividades/{{ t.id }}/concluir">
+    <input type="hidden" name="voltar" value="/agenda">
+    <button type="submit">Concluir</button>
+  </form>
+</div>
+{% else %}
+<p style="color:#999; font-size:.9rem;">Nada agendado.</p>
+{% endfor %}
+{% endblock %}
