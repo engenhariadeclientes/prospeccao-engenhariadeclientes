@@ -30,13 +30,13 @@ app = FastAPI(title="Prospecção Engenharia de Clientes")
 app.add_middleware(SessionMiddleware, secret_key=os.environ.get("SESSION_SECRET", "dev-secret-troque-em-producao"))
 templates = Jinja2Templates(directory="app/templates")
 
-STATUS_VALIDOS = ["fila", "contatado", "negociando", "fechado", "sem_interesse"]
+STATUS_VALIDOS = ["fila", "contatado", "negociando", "ganho", "perdido"]
 STATUS_LABEL = {
     "fila": "Fila",
     "contatado": "Contatado",
     "negociando": "Negociando",
-    "fechado": "Fechado",
-    "sem_interesse": "Sem interesse",
+    "ganho": "Ganho",
+    "perdido": "Perdido",
 }
 TIPO_ATIVIDADE_LABEL = {"ligacao": "Ligação", "whatsapp": "WhatsApp", "anotacao": "Anotação", "tarefa": "Tarefa"}
 RESULTADO_VALIDOS = ["atendeu", "nao_atendeu", "agendou", "sem_interesse"]
@@ -45,6 +45,17 @@ RESULTADO_VALIDOS = ["atendeu", "nao_atendeu", "agendou", "sem_interesse"]
 @app.on_event("startup")
 def startup() -> None:
     aplicar_schema()
+
+
+def _parsear_valor_brl(bruto: str) -> float | None:
+    """Aceita formato BR digitado (1.500,00) e o valor já normalizado que volta
+    no campo pré-preenchido pelo Jinja (1500.00, sem vírgula)."""
+    texto = bruto.strip()
+    if not texto:
+        return None
+    if "," in texto:
+        texto = texto.replace(".", "").replace(",", ".")
+    return float(texto)
 
 
 def _contar_pendencias(conn, consultor_id: int) -> int:
@@ -125,8 +136,9 @@ def funil(request: Request, ver: str = "meu"):
             if filtro_consultor_id:
                 prospects = conn.execute(
                     """
-                    SELECT p.*, c.nome AS consultor_nome FROM prospects p
+                    SELECT p.*, c.nome AS consultor_nome, pr.nome AS produto_nome FROM prospects p
                     LEFT JOIN consultores c ON c.id = p.consultor_id
+                    LEFT JOIN produtos pr ON pr.id = p.produto_id
                     WHERE p.consultor_id = %s ORDER BY p.criado_em DESC
                     """,
                     (filtro_consultor_id,),
@@ -134,16 +146,18 @@ def funil(request: Request, ver: str = "meu"):
             else:
                 prospects = conn.execute(
                     """
-                    SELECT p.*, c.nome AS consultor_nome FROM prospects p
+                    SELECT p.*, c.nome AS consultor_nome, pr.nome AS produto_nome FROM prospects p
                     LEFT JOIN consultores c ON c.id = p.consultor_id
+                    LEFT JOIN produtos pr ON pr.id = p.produto_id
                     ORDER BY p.criado_em DESC
                     """
                 ).fetchall()
         else:
             prospects = conn.execute(
                 """
-                SELECT p.*, c.nome AS consultor_nome FROM prospects p
+                SELECT p.*, c.nome AS consultor_nome, pr.nome AS produto_nome FROM prospects p
                 LEFT JOIN consultores c ON c.id = p.consultor_id
+                LEFT JOIN produtos pr ON pr.id = p.produto_id
                 WHERE p.consultor_id = %s OR (p.status = 'fila' AND p.consultor_id IS NULL)
                 ORDER BY p.criado_em DESC
                 """,
@@ -240,8 +254,11 @@ def prospect_detalhe(request: Request, prospect_id: int):
     with get_connection() as conn:
         prospect = conn.execute(
             """
-            SELECT p.*, c.nome AS consultor_nome
-            FROM prospects p LEFT JOIN consultores c ON c.id = p.consultor_id
+            SELECT p.*, c.nome AS consultor_nome, pr.nome AS produto_nome, m.nome AS motivo_perda_nome
+            FROM prospects p
+            LEFT JOIN consultores c ON c.id = p.consultor_id
+            LEFT JOIN produtos pr ON pr.id = p.produto_id
+            LEFT JOIN motivos_perda m ON m.id = p.motivo_perda_id
             WHERE p.id = %s
             """,
             (prospect_id,),
@@ -256,12 +273,16 @@ def prospect_detalhe(request: Request, prospect_id: int):
             (prospect_id,),
         ).fetchall()
         consultores = conn.execute("SELECT id, nome FROM consultores ORDER BY nome").fetchall()
+        produtos = conn.execute("SELECT id, nome FROM produtos ORDER BY nome").fetchall()
+        motivos_perda = conn.execute("SELECT id, nome FROM motivos_perda ORDER BY nome").fetchall()
         contexto = _contexto_base(request, conn)
 
     contexto.update({
         "prospect": prospect,
         "timeline": timeline,
         "consultores": consultores,
+        "produtos": produtos,
+        "motivos_perda": motivos_perda,
         "status_validos": STATUS_VALIDOS,
         "status_label": STATUS_LABEL,
         "tipo_label": TIPO_ATIVIDADE_LABEL,
@@ -271,13 +292,14 @@ def prospect_detalhe(request: Request, prospect_id: int):
 
 
 @app.post("/prospects/{prospect_id}/status")
-def atualizar_status(prospect_id: int, status: str = Form(...)):
+def atualizar_status(prospect_id: int, status: str = Form(...), motivo_perda_id: str = Form("")):
     if status not in STATUS_VALIDOS:
         return RedirectResponse(url="/", status_code=303)
+    motivo_val = int(motivo_perda_id) if (status == "perdido" and motivo_perda_id) else None
     with get_connection() as conn:
         conn.execute(
-            "UPDATE prospects SET status = %s, atualizado_em = NOW() WHERE id = %s",
-            (status, prospect_id),
+            "UPDATE prospects SET status = %s, motivo_perda_id = %s, atualizado_em = NOW() WHERE id = %s",
+            (status, motivo_val, prospect_id),
         )
         conn.commit()
     return RedirectResponse(url=f"/prospects/{prospect_id}", status_code=303)
@@ -290,6 +312,31 @@ def atribuir_consultor(prospect_id: int, consultor_id: str = Form(...)):
         conn.execute(
             "UPDATE prospects SET consultor_id = %s, atualizado_em = NOW() WHERE id = %s",
             (valor, prospect_id),
+        )
+        conn.commit()
+    return RedirectResponse(url=f"/prospects/{prospect_id}", status_code=303)
+
+
+@app.post("/prospects/{prospect_id}/negocio")
+def atualizar_negocio(
+    prospect_id: int,
+    produto_id: str = Form(""),
+    valor_orcamento: str = Form(""),
+    previsao_fechamento: str = Form(""),
+    observacoes_produto: str = Form(""),
+):
+    produto_val = int(produto_id) if produto_id else None
+    valor_val = _parsear_valor_brl(valor_orcamento)
+    previsao_val = previsao_fechamento or None
+    with get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE prospects
+            SET produto_id = %s, valor_orcamento = %s, previsao_fechamento = %s,
+                observacoes_produto = %s, atualizado_em = NOW()
+            WHERE id = %s
+            """,
+            (produto_val, valor_val, previsao_val, observacoes_produto.strip() or None, prospect_id),
         )
         conn.commit()
     return RedirectResponse(url=f"/prospects/{prospect_id}", status_code=303)
@@ -469,11 +516,28 @@ def admin_dashboard(request: Request):
             """
             SELECT c.nome,
                    COUNT(*) AS total,
-                   COUNT(*) FILTER (WHERE p.status = 'fechado') AS fechados
+                   COUNT(*) FILTER (WHERE p.status = 'ganho') AS ganhos,
+                   COALESCE(SUM(p.valor_orcamento) FILTER (WHERE p.status = 'ganho'), 0) AS valor_ganho
             FROM prospects p
             JOIN consultores c ON c.id = p.consultor_id
             GROUP BY c.nome
             ORDER BY total DESC
+            """
+        ).fetchall()
+
+        valor_por_status = {
+            row["status"]: row["total_valor"]
+            for row in conn.execute(
+                "SELECT status, COALESCE(SUM(valor_orcamento), 0) AS total_valor FROM prospects GROUP BY status"
+            ).fetchall()
+        }
+
+        motivos_perda_ranking = conn.execute(
+            """
+            SELECT m.nome, COUNT(*) AS total
+            FROM prospects p JOIN motivos_perda m ON m.id = p.motivo_perda_id
+            WHERE p.status = 'perdido'
+            GROUP BY m.nome ORDER BY total DESC
             """
         ).fetchall()
 
@@ -486,8 +550,58 @@ def admin_dashboard(request: Request):
         "status_label": STATUS_LABEL,
         "atividade_por_consultor": atividade_por_consultor,
         "prospects_por_consultor": prospects_por_consultor,
+        "valor_por_status": valor_por_status,
+        "motivos_perda_ranking": motivos_perda_ranking,
     })
     return templates.TemplateResponse("admin.html", contexto)
+
+
+# ------------------------------------------------------- catálogos (admin)
+
+@app.get("/produtos")
+def produtos_lista(request: Request):
+    redirect = exigir_admin(request)
+    if redirect:
+        return redirect
+    with get_connection() as conn:
+        produtos = conn.execute("SELECT id, nome, criado_em FROM produtos ORDER BY nome").fetchall()
+        contexto = _contexto_base(request, conn)
+    contexto["produtos"] = produtos
+    return templates.TemplateResponse("produtos.html", contexto)
+
+
+@app.post("/produtos")
+def produtos_criar(request: Request, nome: str = Form(...)):
+    redirect = exigir_admin(request)
+    if redirect:
+        return redirect
+    with get_connection() as conn:
+        conn.execute("INSERT INTO produtos (nome) VALUES (%s) ON CONFLICT (nome) DO NOTHING", (nome.strip(),))
+        conn.commit()
+    return RedirectResponse(url="/produtos", status_code=303)
+
+
+@app.get("/motivos-perda")
+def motivos_perda_lista(request: Request):
+    redirect = exigir_admin(request)
+    if redirect:
+        return redirect
+    with get_connection() as conn:
+        motivos = conn.execute("SELECT id, nome, criado_em FROM motivos_perda ORDER BY nome").fetchall()
+        contexto = _contexto_base(request, conn)
+    contexto["motivos"] = motivos
+    return templates.TemplateResponse("motivos_perda.html", contexto)
+
+
+@app.post("/motivos-perda")
+def motivos_perda_criar(request: Request, nome: str = Form(...)):
+    redirect = exigir_admin(request)
+    if redirect:
+        return redirect
+    with get_connection() as conn:
+        conn.execute("INSERT INTO motivos_perda (nome) VALUES (%s) ON CONFLICT (nome) DO NOTHING", (nome.strip(),))
+        conn.commit()
+    return RedirectResponse(url="/motivos-perda", status_code=303)
 
 
 @app.get("/export.csv")

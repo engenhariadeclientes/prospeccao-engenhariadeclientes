@@ -7,11 +7,12 @@
   form.busca input[name="cidade"] { flex: 1; min-width: 160px; }
   .filtros { margin-bottom: 1rem; font-size: .9rem; }
   .board { display: flex; gap: 1rem; overflow-x: auto; padding-bottom: 1rem; }
-  .coluna { flex: 0 0 260px; background: #f7f7f8; border-radius: 8px; padding: .75rem; }
-  .coluna h3 { font-size: .95rem; margin: 0 0 .5rem 0; display: flex; justify-content: space-between; }
-  .prospect-card { background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: .6rem; margin-bottom: .5rem; font-size: .85rem; }
+  .coluna { flex: 0 0 260px; background: var(--navy-bg); border-radius: 8px; padding: .75rem; }
+  .coluna h3 { font-size: .95rem; margin: 0 0 .5rem 0; display: flex; justify-content: space-between; color: var(--navy); }
+  .prospect-card { background: #fff; border: 1px solid #dde3ec; border-left: 3px solid var(--navy); border-radius: 6px; padding: .6rem; margin-bottom: .5rem; font-size: .85rem; }
   .prospect-card .nome { font-weight: 600; display: block; margin-bottom: .2rem; }
   .prospect-card .meta { color: #666; font-size: .8rem; margin-bottom: .4rem; }
+  .prospect-card .valor { color: var(--navy); font-weight: 600; }
   .prospect-card a { font-size: .8rem; }
   .prospect-card button.assumir { font-size: .75rem; padding: .2rem .5rem; margin-left: .4rem; }
   .buscas-recentes { font-size: .85rem; color: #555; }
@@ -46,6 +47,9 @@
       <span class="nome">{{ p.nome or 'Sem nome' }}</span>
       <span class="meta">{{ p.cidade or '—' }}{% if p.uf %}/{{ p.uf }}{% endif %} · {{ p.categoria }}</span>
       <span class="meta">📞 <a href="tel:{{ p.telefone }}">{{ p.telefone }}</a></span>
+      {% if p.produto_nome %}<span class="meta">🎯 {{ p.produto_nome }}</span>{% endif %}
+      {% if p.valor_orcamento %}<span class="meta valor">R$ {{ '%.2f'|format(p.valor_orcamento)|replace('.', ',') }}</span>{% endif %}
+      <span class="meta">Entrou em {{ p.criado_em.strftime('%d/%m/%Y') }}</span>
       <span class="meta">
         {{ p.consultor_nome or 'sem consultor' }}
         {% if not p.consultor_nome %}

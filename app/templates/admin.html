@@ -2,36 +2,50 @@
 {% block title %}Admin{% endblock %}
 {% block content %}
 <style>
-  .barra-fundo { background: #eee; border-radius: 4px; overflow: hidden; height: 20px; width: 200px; }
-  .barra { background: #1a5fb4; height: 100%; }
+  .barra-fundo { background: #e4e9f2; border-radius: 4px; overflow: hidden; height: 20px; width: 200px; }
+  .barra { background: var(--navy); height: 100%; }
   .linha-funil { display: flex; align-items: center; gap: .6rem; margin-bottom: .5rem; font-size: .9rem; }
   .linha-funil .rotulo { width: 120px; }
-  .linha-funil .valor { width: 40px; text-align: right; }
+  .linha-funil .valor { width: 140px; text-align: right; color: #555; }
 </style>
 <h1>Visão administrativa</h1>
 
-<h2 style="font-size:1.1rem">Funil (estágios)</h2>
+<h2 style="font-size:1.1rem">Funil (estágios) e valor em pipeline</h2>
 {% for status in status_validos %}
 <div class="linha-funil">
   <span class="rotulo">{{ status_label[status] }}</span>
   <div class="barra-fundo"><div class="barra" style="width:{{ (funil_counts.get(status, 0) / total_prospects * 100)|round }}%"></div></div>
-  <span class="valor">{{ funil_counts.get(status, 0) }}</span>
+  <span>{{ funil_counts.get(status, 0) }}</span>
+  <span class="valor">R$ {{ '%.2f'|format(valor_por_status.get(status, 0))|replace('.', ',') }}</span>
 </div>
 {% endfor %}
 
 <h2 style="font-size:1.1rem">Prospects e negócios por consultor</h2>
 <table>
-  <thead><tr><th>Consultor</th><th>Total de prospects</th><th>Fechados</th><th>Taxa de fechamento</th></tr></thead>
+  <thead><tr><th>Consultor</th><th>Total de prospects</th><th>Ganhos</th><th>Taxa de ganho</th><th>Valor ganho</th></tr></thead>
   <tbody>
     {% for r in prospects_por_consultor %}
     <tr>
       <td>{{ r.nome }}</td>
       <td>{{ r.total }}</td>
-      <td>{{ r.fechados }}</td>
-      <td>{{ ((r.fechados / r.total * 100)|round(1)) if r.total else 0 }}%</td>
+      <td>{{ r.ganhos }}</td>
+      <td>{{ ((r.ganhos / r.total * 100)|round(1)) if r.total else 0 }}%</td>
+      <td>R$ {{ '%.2f'|format(r.valor_ganho)|replace('.', ',') }}</td>
     </tr>
     {% else %}
-    <tr><td colspan="4">Nenhum prospect atribuído ainda.</td></tr>
+    <tr><td colspan="5">Nenhum prospect atribuído ainda.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2 style="font-size:1.1rem">Motivos de perda mais frequentes</h2>
+<table>
+  <thead><tr><th>Motivo</th><th>Quantidade</th></tr></thead>
+  <tbody>
+    {% for r in motivos_perda_ranking %}
+    <tr><td>{{ r.nome }}</td><td>{{ r.total }}</td></tr>
+    {% else %}
+    <tr><td colspan="2">Nenhuma perda registrada com motivo ainda.</td></tr>
     {% endfor %}
   </tbody>
 </table>

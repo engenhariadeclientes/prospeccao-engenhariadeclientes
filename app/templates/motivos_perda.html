@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Motivos de perda{% endblock %}
+{% block content %}
+<h1>Motivos de perda</h1>
+<p style="font-size:.9rem; color:#555;">Usados quando um prospect é marcado como "Perdido" no funil.</p>
+
+<table>
+  <thead><tr><th>Nome</th><th>Cadastrado em</th></tr></thead>
+  <tbody>
+    {% for m in motivos %}
+    <tr><td>{{ m.nome }}</td><td>{{ m.criado_em.strftime('%d/%m/%Y') }}</td></tr>
+    {% else %}
+    <tr><td colspan="2">Nenhum motivo cadastrado.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="card" style="max-width:360px;">
+  <h2 style="font-size:1.1rem; margin-top:0;">Cadastrar motivo</h2>
+  <form method="post" action="/motivos-perda" style="display:flex; gap:.5rem;">
+    <input type="text" name="nome" placeholder="Ex.: Preço alto" required style="flex:1;">
+    <button type="submit">Adicionar</button>
+  </form>
+</div>
+{% endblock %}

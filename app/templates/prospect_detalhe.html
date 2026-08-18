@@ -3,11 +3,12 @@
 {% block content %}
 <style>
   .timeline { list-style: none; padding: 0; }
-  .timeline li { border-left: 3px solid #1a5fb4; padding: .4rem 0 .4rem 1rem; margin-bottom: .6rem; }
+  .timeline li { border-left: 3px solid var(--navy); padding: .4rem 0 .4rem 1rem; margin-bottom: .6rem; }
   .timeline .tipo { font-weight: 600; }
   .timeline .quando { color: #888; font-size: .8rem; }
   .timeline .concluida { text-decoration: line-through; color: #999; }
-  #campos-resultado, #campos-agendada { display: none; }
+  #campos-resultado, #campos-agendada, #campo-motivo { display: none; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
 </style>
 <p><a href="/">← Voltar pro funil</a></p>
 <h1>{{ prospect.nome or 'Sem nome' }}</h1>
@@ -16,19 +17,39 @@
   <p><strong>Telefone:</strong> <a href="tel:{{ prospect.telefone }}">{{ prospect.telefone }}</a></p>
   <p><strong>Endereço:</strong> {{ prospect.endereco or '—' }}</p>
   <p><strong>Categoria:</strong> {{ prospect.categoria }}</p>
+  <p><strong>Data de entrada:</strong> {{ prospect.criado_em.strftime('%d/%m/%Y %H:%M') }}</p>
 
-  <form method="post" action="/prospects/{{ prospect.id }}/status" style="display:inline-block; margin-right:1rem;">
+  <form method="post" action="/prospects/{{ prospect.id }}/status" id="form-status" style="display:flex; gap:.6rem; align-items:flex-end; flex-wrap:wrap; margin-bottom:1rem;">
     <label>Status:
-      <select name="status" onchange="this.form.submit()">
+      <select name="status" id="campo-status" onchange="atualizarMotivo()">
         {% for s in status_validos %}
         <option value="{{ s }}" {{ 'selected' if s == prospect.status else '' }}>{{ status_label[s] }}</option>
         {% endfor %}
       </select>
     </label>
+    <label id="campo-motivo">Motivo da perda:
+      <select name="motivo_perda_id">
+        <option value="">Selecione</option>
+        {% for m in motivos_perda %}
+        <option value="{{ m.id }}" {{ 'selected' if prospect.motivo_perda_id == m.id else '' }}>{{ m.nome }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit">Salvar status</button>
   </form>
+  {% if prospect.status == 'perdido' and prospect.motivo_perda_nome %}
+  <p style="font-size:.85rem; color:#888;">Motivo registrado: {{ prospect.motivo_perda_nome }}</p>
+  {% endif %}
+  <script>
+    function atualizarMotivo() {
+      document.getElementById('campo-motivo').style.display =
+        document.getElementById('campo-status').value === 'perdido' ? 'inline-block' : 'none';
+    }
+    atualizarMotivo();
+  </script>
 
-  <form method="post" action="/prospects/{{ prospect.id }}/consultor" style="display:inline-block;">
-    <label>Consultor:
+  <form method="post" action="/prospects/{{ prospect.id }}/consultor">
+    <label>Consultor responsável:
       <select name="consultor_id" onchange="this.form.submit()">
         <option value="">Sem consultor</option>
         {% for c in consultores %}
@@ -40,9 +61,34 @@
 </div>
 
 <div class="card">
+  <h2 style="font-size:1.1rem; margin-top:0;">Negócio</h2>
+  <form method="post" action="/prospects/{{ prospect.id }}/negocio" style="display:flex; flex-direction:column; gap:.6rem; max-width:460px;">
+    <label>Produto:
+      <select name="produto_id" style="width:100%;">
+        <option value="">Selecione</option>
+        {% for p in produtos %}
+        <option value="{{ p.id }}" {{ 'selected' if prospect.produto_id == p.id else '' }}>{{ p.nome }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <div class="grid-2">
+      <label>Orçamento (R$):
+        <input type="text" name="valor_orcamento" value="{{ prospect.valor_orcamento or '' }}" placeholder="0,00">
+      </label>
+      <label>Previsão de fechamento:
+        <input type="date" name="previsao_fechamento" value="{{ prospect.previsao_fechamento.isoformat() if prospect.previsao_fechamento else '' }}">
+      </label>
+    </div>
+    <label>Anotações sobre o produto/negócio:
+      <textarea name="observacoes_produto" rows="4" style="width:100%;">{{ prospect.observacoes_produto or '' }}</textarea>
+    </label>
+    <button type="submit" style="align-self:flex-start;">Salvar negócio</button>
+  </form>
+</div>
+
+<div class="card">
   <h2 style="font-size:1.1rem; margin-top:0;">Registrar na linha do tempo</h2>
-  <form method="post" action="/prospects/{{ prospect.id }}/atividades" style="display:flex; flex-direction:column; gap:.6rem; max-width:420px;"
-        onsubmit="return true;">
+  <form method="post" action="/prospects/{{ prospect.id }}/atividades" style="display:flex; flex-direction:column; gap:.6rem; max-width:420px;">
     <label>Tipo:
       <select name="tipo" id="campo-tipo" onchange="atualizarCampos()">
         <option value="ligacao">Ligação</option>
