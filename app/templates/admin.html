@@ -20,6 +20,21 @@
 </div>
 {% endfor %}
 
+<h2 style="font-size:1.1rem">Probabilidade de fechamento por temperatura</h2>
+<p style="font-size:.85rem; color:#666; margin-top:-.5rem;">Só considera negócios ainda abertos (fora de Ganho/Perdido).</p>
+<table>
+  <thead><tr><th>Temperatura</th><th>Negócios abertos</th><th>Valor em pipeline</th></tr></thead>
+  <tbody>
+    {% for t in temperatura_validos %}
+    <tr>
+      <td>{{ temperatura_label[t] }}</td>
+      <td>{{ por_temperatura[t].total if t in por_temperatura else 0 }}</td>
+      <td>R$ {{ '%.2f'|format(por_temperatura[t].valor_total if t in por_temperatura else 0)|replace('.', ',') }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
 <h2 style="font-size:1.1rem">Prospects e negócios por usuário</h2>
 <table>
   <thead><tr><th>Usuário</th><th>Total de prospects</th><th>Ganhos</th><th>Taxa de ganho</th><th>Valor ganho</th></tr></thead>

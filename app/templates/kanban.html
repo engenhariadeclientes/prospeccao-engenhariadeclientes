@@ -12,7 +12,9 @@
   .filtros label { font-size: .8rem; color: #444; display: flex; flex-direction: column; gap: .2rem; }
   .board { display: flex; gap: 1rem; overflow-x: auto; padding-bottom: 1rem; }
   .coluna { flex: 0 0 260px; background: var(--navy-bg); border-radius: 8px; padding: .75rem; }
-  .coluna h3 { font-size: .95rem; margin: 0 0 .5rem 0; display: flex; justify-content: space-between; color: var(--navy); }
+  .coluna h3 { font-size: .95rem; margin: 0 0 .3rem 0; display: flex; justify-content: space-between; color: var(--navy); }
+  .coluna .soma { font-size: .75rem; color: #666; margin-bottom: .5rem; }
+  .prospect-card .temperatura { font-size: .8rem; }
   .prospect-card { background: #fff; border: 1px solid #dde3ec; border-left: 3px solid var(--navy); border-radius: 6px; padding: .6rem; margin-bottom: .5rem; font-size: .85rem; }
   .prospect-card .nome { font-weight: 600; display: block; margin-bottom: .2rem; }
   .prospect-card .meta { color: #666; font-size: .8rem; margin-bottom: .4rem; }
@@ -75,6 +77,7 @@
   {% for status in status_validos %}
   <div class="coluna">
     <h3>{{ status_label[status] }} <span>{{ colunas[status]|length }}</span></h3>
+    <div class="soma">R$ {{ '%.2f'|format(somas_coluna[status])|replace('.', ',') }} em negócios</div>
     {% for p in colunas[status] %}
     <div class="prospect-card">
       <span class="nome">{{ p.nome or 'Sem nome' }}</span>
@@ -82,6 +85,7 @@
       <span class="meta">📞 <a href="tel:{{ p.telefone }}">{{ p.telefone }}</a></span>
       {% if p.produto_nome %}<span class="meta">🎯 {{ p.produto_nome }}</span>{% endif %}
       {% if p.valor_orcamento %}<span class="meta valor">R$ {{ '%.2f'|format(p.valor_orcamento)|replace('.', ',') }}</span>{% endif %}
+      {% if p.temperatura %}<span class="meta temperatura">{{ temperatura_label[p.temperatura] }}</span>{% endif %}
       <span class="meta">Entrou em {{ p.criado_em.strftime('%d/%m/%Y') }}</span>
       <span class="meta">
         {{ p.consultor_nome or 'sem responsável' }}

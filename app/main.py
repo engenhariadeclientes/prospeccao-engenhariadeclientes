@@ -42,6 +42,8 @@ STATUS_LABEL = {
 }
 TIPO_ATIVIDADE_LABEL = {"ligacao": "Ligação", "whatsapp": "WhatsApp", "anotacao": "Anotação", "tarefa": "Tarefa"}
 RESULTADO_VALIDOS = ["atendeu", "nao_atendeu", "agendou", "sem_interesse"]
+TEMPERATURA_VALIDOS = ["quente", "morno", "frio"]
+TEMPERATURA_LABEL = {"quente": "🔥 Quente", "morno": "🙂 Morno", "frio": "❄️ Frio"}
 
 
 @app.on_event("startup")
@@ -145,11 +147,17 @@ def funil(
 
     if consultor["is_admin"] and ver != "meu":
         if ver.isdigit():
-            condicoes.append("p.consultor_id = %s")
-            parametros.append(int(ver))
+            condicoes.append(
+                "(p.consultor_id = %s OR EXISTS (SELECT 1 FROM prospect_participantes pp "
+                "WHERE pp.prospect_id = p.id AND pp.consultor_id = %s))"
+            )
+            parametros.extend([int(ver), int(ver)])
     else:
-        condicoes.append("(p.consultor_id = %s OR (p.status = 'fila' AND p.consultor_id IS NULL))")
-        parametros.append(consultor["id"])
+        condicoes.append(
+            "(p.consultor_id = %s OR (p.status = 'fila' AND p.consultor_id IS NULL) "
+            "OR EXISTS (SELECT 1 FROM prospect_participantes pp WHERE pp.prospect_id = p.id AND pp.consultor_id = %s))"
+        )
+        parametros.extend([consultor["id"], consultor["id"]])
 
     if q.strip():
         condicoes.append("(p.nome ILIKE %s OR p.decisor_nome ILIKE %s)")
@@ -199,10 +207,17 @@ def funil(
     for p in prospects:
         colunas[p["status"]].append(p)
 
+    somas_coluna = {
+        status: sum((p["valor_orcamento"] or 0) for p in colunas[status])
+        for status in STATUS_VALIDOS
+    }
+
     contexto.update({
         "colunas": colunas,
+        "somas_coluna": somas_coluna,
         "status_validos": STATUS_VALIDOS,
         "status_label": STATUS_LABEL,
+        "temperatura_label": TEMPERATURA_LABEL,
         "consultores": consultores,
         "produtos": produtos,
         "buscas": buscas,
@@ -408,7 +423,20 @@ def prospect_detalhe(request: Request, prospect_id: int):
         motivos_perda = conn.execute("SELECT id, nome FROM motivos_perda ORDER BY nome").fetchall()
         canais_aquisicao = conn.execute("SELECT id, nome FROM canais_aquisicao ORDER BY nome").fetchall()
         categorias_aquisicao = conn.execute("SELECT id, nome FROM categorias_aquisicao ORDER BY nome").fetchall()
+        participantes = conn.execute(
+            """
+            SELECT c.id, c.nome FROM prospect_participantes pp
+            JOIN consultores c ON c.id = pp.consultor_id
+            WHERE pp.prospect_id = %s ORDER BY c.nome
+            """,
+            (prospect_id,),
+        ).fetchall()
         contexto = _contexto_base(request, conn)
+
+    ids_participantes = {p["id"] for p in participantes}
+    consultores_disponiveis = [
+        c for c in consultores if c["id"] != prospect["consultor_id"] and c["id"] not in ids_participantes
+    ]
 
     contexto.update({
         "prospect": prospect,
@@ -418,12 +446,46 @@ def prospect_detalhe(request: Request, prospect_id: int):
         "motivos_perda": motivos_perda,
         "canais_aquisicao": canais_aquisicao,
         "categorias_aquisicao": categorias_aquisicao,
+        "participantes": participantes,
+        "consultores_disponiveis": consultores_disponiveis,
         "status_validos": STATUS_VALIDOS,
         "status_label": STATUS_LABEL,
         "tipo_label": TIPO_ATIVIDADE_LABEL,
         "resultado_validos": RESULTADO_VALIDOS,
+        "temperatura_validos": TEMPERATURA_VALIDOS,
+        "temperatura_label": TEMPERATURA_LABEL,
     })
     return templates.TemplateResponse("prospect_detalhe.html", contexto)
+
+
+@app.post("/prospects/{prospect_id}/participantes")
+def adicionar_participante(request: Request, prospect_id: int, consultor_id: str = Form(...)):
+    redirect = exigir_login(request)
+    if redirect:
+        return redirect
+    if consultor_id:
+        with get_connection() as conn:
+            conn.execute(
+                "INSERT INTO prospect_participantes (prospect_id, consultor_id) VALUES (%s, %s) "
+                "ON CONFLICT DO NOTHING",
+                (prospect_id, int(consultor_id)),
+            )
+            conn.commit()
+    return RedirectResponse(url=f"/prospects/{prospect_id}", status_code=303)
+
+
+@app.post("/prospects/{prospect_id}/participantes/{consultor_id}/remover")
+def remover_participante(request: Request, prospect_id: int, consultor_id: int):
+    redirect = exigir_login(request)
+    if redirect:
+        return redirect
+    with get_connection() as conn:
+        conn.execute(
+            "DELETE FROM prospect_participantes WHERE prospect_id = %s AND consultor_id = %s",
+            (prospect_id, consultor_id),
+        )
+        conn.commit()
+    return RedirectResponse(url=f"/prospects/{prospect_id}", status_code=303)
 
 
 @app.post("/prospects/{prospect_id}/status")
@@ -467,12 +529,14 @@ def atualizar_negocio(
     decisor_endereco: str = Form(""),
     decisor_aniversario: str = Form(""),
     decisor_redes_sociais: str = Form(""),
+    temperatura: str = Form(""),
 ):
     produto_val = int(produto_id) if produto_id else None
     valor_val = _parsear_valor_brl(valor_orcamento)
     previsao_val = previsao_fechamento or None
     canal_val = int(canal_aquisicao_id) if canal_aquisicao_id else None
     categoria_val = int(categoria_aquisicao_id) if categoria_aquisicao_id else None
+    temperatura_val = temperatura if temperatura in TEMPERATURA_VALIDOS else None
     with get_connection() as conn:
         conn.execute(
             """
@@ -481,7 +545,7 @@ def atualizar_negocio(
                 observacoes_produto = %s, canal_aquisicao_id = %s, categoria_aquisicao_id = %s,
                 decisor_nome = %s, decisor_telefone = %s, decisor_email = %s,
                 decisor_endereco = %s, decisor_aniversario = %s, decisor_redes_sociais = %s,
-                atualizado_em = NOW()
+                temperatura = %s, atualizado_em = NOW()
             WHERE id = %s
             """,
             (
@@ -489,6 +553,7 @@ def atualizar_negocio(
                 canal_val, categoria_val,
                 decisor_nome.strip() or None, decisor_telefone.strip() or None, decisor_email.strip() or None,
                 decisor_endereco.strip() or None, decisor_aniversario or None, decisor_redes_sociais.strip() or None,
+                temperatura_val,
                 prospect_id,
             ),
         )
@@ -747,6 +812,17 @@ def admin_dashboard(request: Request):
             """
         ).fetchall()
 
+        por_temperatura = conn.execute(
+            """
+            SELECT temperatura, COUNT(*) AS total, COUNT(*) FILTER (WHERE status = 'ganho') AS ganhos,
+                   COALESCE(SUM(valor_orcamento), 0) AS valor_total
+            FROM prospects
+            WHERE temperatura IS NOT NULL AND status NOT IN ('ganho', 'perdido')
+            GROUP BY temperatura
+            """
+        ).fetchall()
+        por_temperatura = {row["temperatura"]: row for row in por_temperatura}
+
         contexto = _contexto_base(request, conn)
 
     contexto.update({
@@ -754,12 +830,15 @@ def admin_dashboard(request: Request):
         "total_prospects": total_prospects,
         "status_validos": STATUS_VALIDOS,
         "status_label": STATUS_LABEL,
+        "temperatura_validos": TEMPERATURA_VALIDOS,
+        "temperatura_label": TEMPERATURA_LABEL,
         "atividade_por_consultor": atividade_por_consultor,
         "prospects_por_consultor": prospects_por_consultor,
         "valor_por_status": valor_por_status,
         "motivos_perda_ranking": motivos_perda_ranking,
         "por_canal_aquisicao": por_canal_aquisicao,
         "por_categoria_aquisicao": por_categoria_aquisicao,
+        "por_temperatura": por_temperatura,
     })
     return templates.TemplateResponse("admin.html", contexto)
 
@@ -863,17 +942,33 @@ def exportar_csv(request: Request):
     redirect = exigir_login(request)
     if redirect:
         return redirect
+    consultor = consultor_logado(request)
 
     with get_connection() as conn:
-        prospects = conn.execute(
-            """
-            SELECT p.nome, p.telefone, p.cidade, p.uf, p.categoria, p.status,
-                   c.nome AS consultor_nome, p.criado_em
-            FROM prospects p
-            LEFT JOIN consultores c ON c.id = p.consultor_id
-            ORDER BY p.criado_em DESC
-            """
-        ).fetchall()
+        if consultor["is_admin"]:
+            prospects = conn.execute(
+                """
+                SELECT p.nome, p.telefone, p.cidade, p.uf, p.categoria, p.status,
+                       c.nome AS consultor_nome, p.criado_em
+                FROM prospects p
+                LEFT JOIN consultores c ON c.id = p.consultor_id
+                ORDER BY p.criado_em DESC
+                """
+            ).fetchall()
+        else:
+            prospects = conn.execute(
+                """
+                SELECT p.nome, p.telefone, p.cidade, p.uf, p.categoria, p.status,
+                       c.nome AS consultor_nome, p.criado_em
+                FROM prospects p
+                LEFT JOIN consultores c ON c.id = p.consultor_id
+                WHERE p.consultor_id = %s OR (p.status = 'fila' AND p.consultor_id IS NULL)
+                      OR EXISTS (SELECT 1 FROM prospect_participantes pp
+                                 WHERE pp.prospect_id = p.id AND pp.consultor_id = %s)
+                ORDER BY p.criado_em DESC
+                """,
+                (consultor["id"], consultor["id"]),
+            ).fetchall()
 
     buffer = io.StringIO()
     writer = csv.writer(buffer)
