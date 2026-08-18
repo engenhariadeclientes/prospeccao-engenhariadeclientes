@@ -21,9 +21,27 @@
   .participantes-lista li { background: var(--navy-bg); border: 1px solid #dde3ec; border-radius: 20px; padding: .25rem .8rem; font-size: .85rem; display: flex; align-items: center; gap: .5rem; }
   .participantes-lista form { display: inline; }
   .participantes-lista button { background: none; border: none; color: #c01c28; cursor: pointer; font-size: .9rem; padding: 0; }
+
+  .proxima-acao-banner { display: flex; justify-content: space-between; align-items: center; padding: .8rem 1rem; border-radius: 8px; margin-bottom: 1rem; font-size: .9rem; }
+  .proxima-acao-banner.tem-acao { background: #fff4e5; border: 1px solid #f0c987; }
+  .proxima-acao-banner.sem-acao { background: #fdecea; border: 1px solid #f3b8b3; }
 </style>
 <p><a href="/">← Voltar pro funil</a></p>
 <h1>{{ prospect.nome or 'Sem nome' }}</h1>
+
+{% if proxima_acao %}
+<div class="proxima-acao-banner tem-acao">
+  <span>📅 <strong>Próxima ação:</strong> {{ proxima_acao.nota or 'sem descrição' }}{% if proxima_acao.data_agendada %} — {{ proxima_acao.data_agendada.strftime('%d/%m/%Y %H:%M') }}{% endif %}</span>
+  <form method="post" action="/atividades/{{ proxima_acao.id }}/concluir">
+    <input type="hidden" name="voltar" value="/prospects/{{ prospect.id }}">
+    <button type="submit" style="font-size:.8rem; padding:.3rem .7rem;">Concluir</button>
+  </form>
+</div>
+{% elif prospect.status not in ('ganho', 'perdido') %}
+<div class="proxima-acao-banner sem-acao">
+  <span>⚠ <strong>Sem próxima ação agendada.</strong> Agende uma tarefa aí embaixo, em "Registrar na linha do tempo".</span>
+</div>
+{% endif %}
 
 <div class="card">
   <div class="form-grid span-3">

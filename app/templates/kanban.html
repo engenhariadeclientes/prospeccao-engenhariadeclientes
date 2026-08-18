@@ -19,6 +19,8 @@
   .prospect-card .nome { font-weight: 600; display: block; margin-bottom: .2rem; }
   .prospect-card .meta { color: #666; font-size: .8rem; margin-bottom: .4rem; }
   .prospect-card .valor { color: var(--navy); font-weight: 600; }
+  .prospect-card .proxima-acao { color: #b3550a; }
+  .prospect-card .sem-acao { color: #c01c28; }
   .prospect-card a { font-size: .8rem; }
   .prospect-card button.assumir { font-size: .75rem; padding: .2rem .5rem; margin-left: .4rem; }
   .buscas-recentes { font-size: .85rem; color: #555; }
@@ -69,6 +71,10 @@
   <label>até
     <input type="date" name="prazo_ate" value="{{ prazo_ate }}">
   </label>
+  <label style="flex-direction:row; align-items:center; gap:.4rem;">
+    <input type="checkbox" name="sem_acao" value="1" {{ 'checked' if sem_acao else '' }} onchange="this.form.submit()">
+    Sem próxima ação agendada
+  </label>
   {% if consultor.is_admin %}
   <label>Ver funil de
     <select name="ver_select" onchange="document.querySelector('input[name=ver]').value=this.value; this.form.submit()">
@@ -81,7 +87,7 @@
   </label>
   {% endif %}
   <button type="submit">Filtrar</button>
-  {% if q or produto_id or prazo_de or prazo_ate %}<a href="/?ver={{ ver }}" class="botao secundario">Limpar filtros</a>{% endif %}
+  {% if q or produto_id or prazo_de or prazo_ate or sem_acao %}<a href="/?ver={{ ver }}" class="botao secundario">Limpar filtros</a>{% endif %}
 </form>
 
 <div class="board">
@@ -97,6 +103,11 @@
       {% if p.produto_nome %}<span class="meta">🎯 {{ p.produto_nome }}</span>{% endif %}
       {% if p.valor_orcamento %}<span class="meta valor">R$ {{ '%.2f'|format(p.valor_orcamento)|replace('.', ',') }}</span>{% endif %}
       {% if p.temperatura %}<span class="meta temperatura">{{ temperatura_label[p.temperatura] }}</span>{% endif %}
+      {% if p.proxima_acao_nota or p.proxima_acao_data %}
+      <span class="meta proxima-acao">📅 {{ p.proxima_acao_nota or 'Próxima ação' }}{% if p.proxima_acao_data %} — {{ p.proxima_acao_data.strftime('%d/%m %H:%M') }}{% endif %}</span>
+      {% elif status not in ('ganho', 'perdido') %}
+      <span class="meta sem-acao">⚠ Sem próxima ação agendada</span>
+      {% endif %}
       <span class="meta">Entrou em {{ p.criado_em.strftime('%d/%m/%Y') }}</span>
       <span class="meta">
         {{ p.consultor_nome or 'sem responsável' }}

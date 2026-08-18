@@ -20,6 +20,13 @@
 </div>
 {% endfor %}
 
+{% if sem_proxima_acao %}
+<div class="card" style="background:#fdecea; border-color:#f3b8b3; display:flex; justify-content:space-between; align-items:center;">
+  <span>⚠ <strong>{{ sem_proxima_acao }}</strong> negócio(s) aberto(s) sem próxima ação agendada.</span>
+  <a href="/?ver=&sem_acao=1" class="botao">Ver quais</a>
+</div>
+{% endif %}
+
 <h2 style="font-size:1.1rem">Probabilidade de fechamento por temperatura</h2>
 <p style="font-size:.85rem; color:#666; margin-top:-.5rem;">Só considera negócios ainda abertos (fora de Ganho/Perdido).</p>
 <table>

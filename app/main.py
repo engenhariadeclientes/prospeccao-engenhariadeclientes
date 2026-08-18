@@ -141,6 +141,7 @@ def funil(
     produto_id: str = "",
     prazo_de: str = "",
     prazo_ate: str = "",
+    sem_acao: str = "",
 ):
     redirect = exigir_login(request)
     if redirect:
@@ -181,6 +182,12 @@ def funil(
         condicoes.append("p.previsao_fechamento <= %s")
         parametros.append(prazo_ate)
 
+    if sem_acao:
+        condicoes.append(
+            "NOT EXISTS (SELECT 1 FROM atividades a WHERE a.prospect_id = p.id "
+            "AND a.tipo = 'tarefa' AND a.concluida = FALSE)"
+        )
+
     where_sql = ("WHERE " + " AND ".join(condicoes)) if condicoes else ""
 
     with get_connection() as conn:
@@ -189,9 +196,16 @@ def funil(
 
         prospects = conn.execute(
             f"""
-            SELECT p.*, c.nome AS consultor_nome, pr.nome AS produto_nome FROM prospects p
+            SELECT p.*, c.nome AS consultor_nome, pr.nome AS produto_nome,
+                   pa.nota AS proxima_acao_nota, pa.data_agendada AS proxima_acao_data
+            FROM prospects p
             LEFT JOIN consultores c ON c.id = p.consultor_id
             LEFT JOIN produtos pr ON pr.id = p.produto_id
+            LEFT JOIN LATERAL (
+                SELECT nota, data_agendada FROM atividades a
+                WHERE a.prospect_id = p.id AND a.tipo = 'tarefa' AND a.concluida = FALSE
+                ORDER BY a.data_agendada ASC NULLS LAST LIMIT 1
+            ) pa ON TRUE
             {where_sql}
             ORDER BY p.criado_em DESC
             """,
@@ -232,6 +246,7 @@ def funil(
         "produto_id": produto_id,
         "prazo_de": prazo_de,
         "prazo_ate": prazo_ate,
+        "sem_acao": sem_acao,
         "fila_pendente": fila_pendente,
         "busca_liberada": busca_liberada,
     })
@@ -439,6 +454,14 @@ def prospect_detalhe(request: Request, prospect_id: int):
             """,
             (prospect_id,),
         ).fetchall()
+        proxima_acao = conn.execute(
+            """
+            SELECT id, nota, data_agendada FROM atividades
+            WHERE prospect_id = %s AND tipo = 'tarefa' AND concluida = FALSE
+            ORDER BY data_agendada ASC NULLS LAST LIMIT 1
+            """,
+            (prospect_id,),
+        ).fetchone()
         consultores = conn.execute("SELECT id, nome FROM consultores ORDER BY nome").fetchall()
         produtos = conn.execute("SELECT id, nome FROM produtos ORDER BY nome").fetchall()
         motivos_perda = conn.execute("SELECT id, nome FROM motivos_perda ORDER BY nome").fetchall()
@@ -462,6 +485,7 @@ def prospect_detalhe(request: Request, prospect_id: int):
     contexto.update({
         "prospect": prospect,
         "timeline": timeline,
+        "proxima_acao": proxima_acao,
         "consultores": consultores,
         "produtos": produtos,
         "motivos_perda": motivos_perda,
@@ -844,6 +868,17 @@ def admin_dashboard(request: Request):
         ).fetchall()
         por_temperatura = {row["temperatura"]: row for row in por_temperatura}
 
+        sem_proxima_acao = conn.execute(
+            """
+            SELECT COUNT(*) AS total FROM prospects p
+            WHERE p.status NOT IN ('ganho', 'perdido')
+                  AND NOT EXISTS (
+                      SELECT 1 FROM atividades a
+                      WHERE a.prospect_id = p.id AND a.tipo = 'tarefa' AND a.concluida = FALSE
+                  )
+            """
+        ).fetchone()["total"]
+
         contexto = _contexto_base(request, conn)
 
     contexto.update({
@@ -860,6 +895,7 @@ def admin_dashboard(request: Request):
         "por_canal_aquisicao": por_canal_aquisicao,
         "por_categoria_aquisicao": por_categoria_aquisicao,
         "por_temperatura": por_temperatura,
+        "sem_proxima_acao": sem_proxima_acao,
     })
     return templates.TemplateResponse("admin.html", contexto)
 
