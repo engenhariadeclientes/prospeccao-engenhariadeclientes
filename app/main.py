@@ -62,6 +62,11 @@ def _parsear_valor_brl(bruto: str) -> float | None:
     return float(texto)
 
 
+def _busca_liberada(conn) -> bool:
+    row = conn.execute("SELECT valor FROM configuracoes WHERE chave = 'busca_liberada'").fetchone()
+    return row is None or row["valor"] == "true"
+
+
 def _contar_pendencias(conn, consultor_id: int) -> int:
     row = conn.execute(
         """
@@ -201,6 +206,7 @@ def funil(
             """
         ).fetchall()
         fila_pendente = conn.execute("SELECT COUNT(*) AS total FROM prospects WHERE status = 'fila'").fetchone()["total"]
+        busca_liberada = _busca_liberada(conn)
         contexto = _contexto_base(request, conn)
 
     colunas = {status: [] for status in STATUS_VALIDOS}
@@ -227,6 +233,7 @@ def funil(
         "prazo_de": prazo_de,
         "prazo_ate": prazo_ate,
         "fila_pendente": fila_pendente,
+        "busca_liberada": busca_liberada,
     })
     return templates.TemplateResponse("kanban.html", contexto)
 
@@ -249,9 +256,8 @@ def buscar(request: Request, categoria: str = Form(...), cidade: str = Form(...)
     agora = datetime.now(timezone.utc)
 
     with get_connection() as conn:
-        fila_pendente = conn.execute("SELECT COUNT(*) AS total FROM prospects WHERE status = 'fila'").fetchone()["total"]
-        if fila_pendente > 0:
-            # nova busca só é liberada depois que a fila atual foi 100% contatada (decisão 18/08/2026, Stella)
+        if not _busca_liberada(conn):
+            # admin controla manualmente quando novas buscas ficam liberadas (decisão 18/08/2026, Stella)
             return RedirectResponse(url="/", status_code=303)
 
         categoria_aquisicao_google_maps = conn.execute(
@@ -293,6 +299,21 @@ def buscar(request: Request, categoria: str = Form(...), cidade: str = Form(...)
         )
         conn.commit()
 
+    return RedirectResponse(url="/", status_code=303)
+
+
+@app.post("/busca/toggle")
+def alternar_busca_liberada(request: Request):
+    redirect = exigir_admin(request)
+    if redirect:
+        return redirect
+    with get_connection() as conn:
+        liberada = _busca_liberada(conn)
+        conn.execute(
+            "UPDATE configuracoes SET valor = %s WHERE chave = 'busca_liberada'",
+            ("false" if liberada else "true",),
+        )
+        conn.commit()
     return RedirectResponse(url="/", status_code=303)
 
 

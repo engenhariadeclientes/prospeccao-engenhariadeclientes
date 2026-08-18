@@ -25,17 +25,28 @@
 </style>
 
 <div class="secao-busca">
-  <h2 title="Busca empresas no Google Maps por categoria + cidade e adiciona os resultados com telefone válido na Fila. Novas buscas só ficam liberadas depois que a fila atual for 100% contatada, pra evitar acumular leads sem trabalhar.">
+  <h2 title="Busca empresas no Google Maps por categoria + cidade e adiciona os resultados com telefone válido na Fila. O admin controla quando novas buscas ficam liberadas ou bloqueadas, em geral pra evitar acumular leads sem trabalhar.">
     🔍 Buscador Google <span style="font-size:.75rem; font-weight:normal; color:#888;">(passe o mouse aqui pra saber como funciona)</span>
   </h2>
-  <form class="busca" method="post" action="/buscar">
-    <input type="text" name="categoria" placeholder="Categoria (ex.: garantidora de receita)" required {{ 'disabled' if fila_pendente else '' }}>
-    <input type="text" name="cidade" placeholder="Cidade (ex.: Blumenau, SC)" required {{ 'disabled' if fila_pendente else '' }}>
-    <input type="number" name="max_resultados" value="40" min="1" max="120" title="Máximo de resultados" {{ 'disabled' if fila_pendente else '' }}>
-    <button type="submit" {{ 'disabled' if fila_pendente else '' }}>Buscar</button>
-  </form>
-  {% if fila_pendente %}
-  <p class="aviso-fila">⚠ Nova busca bloqueada: ainda há {{ fila_pendente }} prospect(s) na Fila sem contato. Assuma e registre o primeiro contato de todos pra liberar.</p>
+  <div style="display:flex; gap:.5rem; flex-wrap:wrap; align-items:flex-start;">
+    <form class="busca" method="post" action="/buscar">
+      <input type="text" name="categoria" placeholder="Categoria (ex.: garantidora de receita)" required {{ 'disabled' if not busca_liberada else '' }}>
+      <input type="text" name="cidade" placeholder="Cidade (ex.: Blumenau, SC)" required {{ 'disabled' if not busca_liberada else '' }}>
+      <input type="number" name="max_resultados" value="40" min="1" max="120" title="Máximo de resultados" {{ 'disabled' if not busca_liberada else '' }}>
+      <button type="submit" {{ 'disabled' if not busca_liberada else '' }}>Buscar</button>
+    </form>
+    {% if consultor.is_admin %}
+    <form method="post" action="/busca/toggle">
+      <button type="submit" class="{{ '' if busca_liberada else 'secundario' }}" style="font-size:.8rem;">
+        {{ '🔒 Bloquear busca' if busca_liberada else '🔓 Liberar busca' }}
+      </button>
+    </form>
+    {% endif %}
+  </div>
+  {% if not busca_liberada %}
+  <p class="aviso-fila">⚠ Nova busca bloqueada pelo admin{% if fila_pendente %} — ainda há {{ fila_pendente }} prospect(s) na Fila sem contato{% endif %}.</p>
+  {% elif fila_pendente %}
+  <p class="aviso-fila" style="color:#666;">ℹ Ainda há {{ fila_pendente }} prospect(s) na Fila sem contato (busca liberada mesmo assim).</p>
   {% endif %}
 </div>
 
