@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Admin{% endblock %}
+{% block title %}Painel Gerencial{% endblock %}
 {% block content %}
 <style>
   .barra-fundo { background: #e4e9f2; border-radius: 4px; overflow: hidden; height: 20px; width: 200px; }
@@ -7,8 +7,11 @@
   .linha-funil { display: flex; align-items: center; gap: .6rem; margin-bottom: .5rem; font-size: .9rem; }
   .linha-funil .rotulo { width: 120px; }
   .linha-funil .valor { width: 140px; text-align: right; color: #555; }
+  .filtro-data { display: flex; gap: .6rem; align-items: flex-end; flex-wrap: wrap; margin: .5rem 0 1.2rem; padding: .8rem; background: var(--navy-bg); border-radius: 8px; }
+  .filtro-data label { font-size: .8rem; color: #444; display: flex; flex-direction: column; gap: .2rem; }
+  .filtro-data .atalhos { display: flex; gap: .4rem; font-size: .8rem; }
 </style>
-<h1>Visão administrativa</h1>
+<h1>Painel Gerencial</h1>
 
 <h2 style="font-size:1.1rem">Funil (estágios) e valor em pipeline</h2>
 {% for status in status_validos %}
@@ -72,7 +75,21 @@
   </tbody>
 </table>
 
-<h2 style="font-size:1.1rem">Atividade por usuário (últimos 30 dias)</h2>
+<h2 style="font-size:1.1rem">Atividade por usuário — produtividade diária</h2>
+<form class="filtro-data" method="get" action="/admin">
+  <label>De
+    <input type="date" name="data_de" value="{{ data_de }}">
+  </label>
+  <label>Até
+    <input type="date" name="data_ate" value="{{ data_ate }}">
+  </label>
+  <button type="submit">Filtrar</button>
+  <div class="atalhos">
+    <a href="/admin?data_de={{ hoje }}&data_ate={{ hoje }}" class="botao secundario">Hoje</a>
+    <a href="/admin?data_de={{ seis_dias_atras }}&data_ate={{ hoje }}" class="botao secundario">7 dias</a>
+    <a href="/admin?data_de={{ vinte_nove_dias_atras }}&data_ate={{ hoje }}" class="botao secundario">30 dias</a>
+  </div>
+</form>
 <table>
   <thead><tr><th>Usuário</th><th>Ligações</th><th>WhatsApp</th><th>Anotações</th><th>Tarefas concluídas</th><th>Total</th></tr></thead>
   <tbody>

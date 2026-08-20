@@ -8,7 +8,7 @@ conforme o que o prospect tiver disponível).
 import csv
 import io
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import RedirectResponse, StreamingResponse
@@ -784,10 +784,17 @@ def log_acesso(request: Request):
 # --------------------------------------------------------------------- admin
 
 @app.get("/admin")
-def admin_dashboard(request: Request):
+def admin_dashboard(request: Request, data_de: str = "", data_ate: str = ""):
     redirect = exigir_admin(request)
     if redirect:
         return redirect
+
+    hoje_date = datetime.now(timezone.utc).date()
+    hoje = hoje_date.isoformat()
+    seis_dias_atras = (hoje_date - timedelta(days=6)).isoformat()
+    vinte_nove_dias_atras = (hoje_date - timedelta(days=29)).isoformat()
+    data_de = data_de or hoje
+    data_ate = data_ate or hoje
 
     with get_connection() as conn:
         funil_counts = {
@@ -806,10 +813,11 @@ def admin_dashboard(request: Request):
                    COUNT(*) AS total
             FROM atividades a
             JOIN consultores c ON c.id = a.consultor_id
-            WHERE a.criado_em >= NOW() - INTERVAL '30 days'
+            WHERE a.criado_em::date BETWEEN %s AND %s
             GROUP BY c.nome
             ORDER BY total DESC
-            """
+            """,
+            (data_de, data_ate),
         ).fetchall()
 
         prospects_por_consultor = conn.execute(
@@ -896,6 +904,11 @@ def admin_dashboard(request: Request):
         "por_categoria_aquisicao": por_categoria_aquisicao,
         "por_temperatura": por_temperatura,
         "sem_proxima_acao": sem_proxima_acao,
+        "data_de": data_de,
+        "data_ate": data_ate,
+        "hoje": hoje,
+        "seis_dias_atras": seis_dias_atras,
+        "vinte_nove_dias_atras": vinte_nove_dias_atras,
     })
     return templates.TemplateResponse("admin.html", contexto)
 
