@@ -6,7 +6,7 @@ from typing import Iterator, Optional
 import requests
 
 BASE_URL = "https://places.googleapis.com/v1/places:searchText"
-FIELD_MASK = "places.displayName,places.nationalPhoneNumber,places.internationalPhoneNumber,places.formattedAddress"
+FIELD_MASK = "places.displayName,places.nationalPhoneNumber,places.internationalPhoneNumber,places.formattedAddress,places.websiteUri"
 
 DDD_UF = {
     11: "SP", 12: "SP", 13: "SP", 14: "SP", 15: "SP", 16: "SP", 17: "SP", 18: "SP", 19: "SP",

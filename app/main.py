@@ -26,6 +26,7 @@ from app.auth import (
 )
 from app.db import aplicar_schema, get_connection
 from app.google_places import buscar_empresas, extrair_cidade_uf, extrair_telefone_valido
+from app.email_finder import buscar_email_no_site
 
 app = FastAPI(title="CRM - Engenharia de Clientes")
 app.add_middleware(SessionMiddleware, secret_key=os.environ.get("SESSION_SECRET", "dev-secret-troque-em-producao"))
@@ -296,14 +297,20 @@ def buscar(request: Request, categoria: str = Form(...), cidade: str = Form(...)
                 continue
 
             lugar_cidade, uf = extrair_cidade_uf(lugar.get("formattedAddress"))
+            site = lugar.get("websiteUri")
+            email_captado = buscar_email_no_site(site) if site else None
             row = conn.execute(
                 """
-                INSERT INTO prospects (prospeccao_id, nome, telefone, endereco, cidade, uf, categoria, categoria_aquisicao_id)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO prospects (prospeccao_id, nome, telefone, endereco, cidade, uf, categoria, categoria_aquisicao_id, site, decisor_email, email_origem)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (telefone) WHERE telefone IS NOT NULL DO NOTHING
                 RETURNING id
                 """,
-                (prospeccao_id, nome, telefone, lugar.get("formattedAddress"), lugar_cidade or cidade, uf, categoria, categoria_aquisicao_id),
+                (
+                    prospeccao_id, nome, telefone, lugar.get("formattedAddress"), lugar_cidade or cidade, uf,
+                    categoria, categoria_aquisicao_id, site,
+                    email_captado, "site" if email_captado else None,
+                ),
             ).fetchone()
             if row:
                 novos += 1
@@ -590,7 +597,9 @@ def atualizar_negocio(
                 observacoes_produto = %s, canal_aquisicao_id = %s, categoria_aquisicao_id = %s,
                 decisor_nome = %s, decisor_telefone = %s, decisor_email = %s,
                 decisor_endereco = %s, decisor_aniversario = %s, decisor_redes_sociais = %s,
-                temperatura = %s, atualizado_em = NOW()
+                temperatura = %s,
+                email_origem = CASE WHEN decisor_email IS DISTINCT FROM %s THEN 'manual' ELSE email_origem END,
+                atualizado_em = NOW()
             WHERE id = %s
             """,
             (
@@ -599,6 +608,7 @@ def atualizar_negocio(
                 decisor_nome.strip() or None, decisor_telefone.strip() or None, decisor_email.strip() or None,
                 decisor_endereco.strip() or None, decisor_aniversario or None, decisor_redes_sociais.strip() or None,
                 temperatura_val,
+                decisor_email.strip() or None,
                 prospect_id,
             ),
         )

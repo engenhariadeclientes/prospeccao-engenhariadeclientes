@@ -50,7 +50,7 @@
       <a href="tel:{{ prospect.telefone }}">{{ prospect.telefone }}</a>
     </label>
   </div>
-  <p style="font-size:.9rem;"><strong>Endereço:</strong> {{ prospect.endereco or '—' }} &nbsp;·&nbsp; <strong>Segmento:</strong> {{ prospect.categoria or '—' }} &nbsp;·&nbsp; <strong>Entrada:</strong> {{ prospect.criado_em.strftime('%d/%m/%Y %H:%M') }}</p>
+  <p style="font-size:.9rem;"><strong>Endereço:</strong> {{ prospect.endereco or '—' }} &nbsp;·&nbsp; <strong>Segmento:</strong> {{ prospect.categoria or '—' }} &nbsp;·&nbsp; <strong>Entrada:</strong> {{ prospect.criado_em.strftime('%d/%m/%Y %H:%M') }}{% if prospect.site %} &nbsp;·&nbsp; <strong>Site:</strong> <a href="{{ prospect.site }}" target="_blank" rel="noopener">{{ prospect.site }}</a>{% endif %}</p>
 
   <form method="post" action="/prospects/{{ prospect.id }}/status" id="form-status" class="form-grid span-3" style="margin-top:.8rem;">
     <label>Status
@@ -172,7 +172,7 @@
     <label>Telefone
       <input type="text" name="decisor_telefone" value="{{ prospect.decisor_telefone or '' }}">
     </label>
-    <label>E-mail
+    <label>E-mail{% if prospect.email_origem == 'site' %} <span style="font-weight:normal; color:#888; font-size:.75rem;">(captado do site)</span>{% endif %}
       <input type="email" name="decisor_email" value="{{ prospect.decisor_email or '' }}">
     </label>
     <label>Aniversário
