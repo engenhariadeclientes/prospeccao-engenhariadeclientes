@@ -10,10 +10,12 @@ import io
 import os
 from datetime import datetime, timedelta, timezone
 
+from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI, Form, Request
-from fastapi.responses import RedirectResponse, StreamingResponse
+from fastapi.responses import PlainTextResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from itsdangerous import BadSignature, URLSafeSerializer
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.auth import (
@@ -27,6 +29,7 @@ from app.auth import (
 from app.db import aplicar_schema, get_connection
 from app.google_places import buscar_empresas, extrair_cidade_uf, extrair_telefone_valido
 from app.email_finder import buscar_email_no_site
+from app.email_sender import enviar_email
 
 app = FastAPI(title="CRM - Engenharia de Clientes")
 app.add_middleware(SessionMiddleware, secret_key=os.environ.get("SESSION_SECRET", "dev-secret-troque-em-producao"))
@@ -41,15 +44,123 @@ STATUS_LABEL = {
     "ganho": "Ganho",
     "perdido": "Perdido",
 }
-TIPO_ATIVIDADE_LABEL = {"ligacao": "Ligação", "whatsapp": "WhatsApp", "anotacao": "Anotação", "tarefa": "Tarefa"}
+TIPO_ATIVIDADE_LABEL = {
+    "ligacao": "Ligação", "whatsapp": "WhatsApp", "anotacao": "Anotação", "tarefa": "Tarefa",
+    "email_automatico": "E-mail automático",
+}
 RESULTADO_VALIDOS = ["atendeu", "nao_atendeu", "agendou", "sem_interesse"]
 TEMPERATURA_VALIDOS = ["quente", "morno", "frio"]
 TEMPERATURA_LABEL = {"quente": "🔥 Quente", "morno": "🙂 Morno", "frio": "❄️ Frio"}
+
+_serializer_descadastro = URLSafeSerializer(os.environ.get("SESSION_SECRET", "dev-secret-troque-em-producao"), salt="descadastro-email")
+scheduler = BackgroundScheduler(timezone="UTC")
+
+
+def _preencher_template_email(texto: str, decisor_nome: str | None, empresa: str | None, consultor_nome: str | None) -> str:
+    return (
+        texto.replace("{{nome_decisor}}", decisor_nome or "")
+        .replace("{{empresa}}", empresa or "sua empresa")
+        .replace("{{consultor_nome}}", consultor_nome or "Engenharia de Clientes")
+    )
+
+
+def _enfileirar_sequencia_email(conn, prospect_id: int) -> None:
+    """Matricula o prospect na sequência de e-mail padrão, se elegível: tem e-mail,
+    ainda não está em nenhuma sequência, não descadastrou e está em etapa inicial do funil."""
+    prospect = conn.execute(
+        "SELECT decisor_email, status, sequencia_email_id, email_opt_out FROM prospects WHERE id = %s",
+        (prospect_id,),
+    ).fetchone()
+    if not prospect or not prospect["decisor_email"] or prospect["sequencia_email_id"] or prospect["email_opt_out"]:
+        return
+    if prospect["status"] not in ("fila", "contatado"):
+        return
+    sequencia = conn.execute("SELECT id FROM sequencias_email WHERE ativa = TRUE ORDER BY id LIMIT 1").fetchone()
+    if not sequencia:
+        return
+    primeira_etapa = conn.execute(
+        "SELECT dias_apos_anterior FROM sequencia_etapas WHERE sequencia_id = %s ORDER BY ordem LIMIT 1",
+        (sequencia["id"],),
+    ).fetchone()
+    if not primeira_etapa:
+        return
+    conn.execute(
+        "UPDATE prospects SET sequencia_email_id = %s, sequencia_etapa_atual = 0, "
+        "proximo_envio_email = NOW() + (%s || ' days')::interval WHERE id = %s",
+        (sequencia["id"], primeira_etapa["dias_apos_anterior"], prospect_id),
+    )
+
+
+def processar_fila_email() -> None:
+    """Rodado periodicamente pelo scheduler: envia o e-mail da vez pra quem estiver
+    devido, e agenda a próxima etapa ou encerra a sequência."""
+    with get_connection() as conn:
+        pendentes = conn.execute(
+            """
+            SELECT p.id, p.decisor_email, p.decisor_nome, p.nome AS empresa, p.sequencia_email_id,
+                   p.sequencia_etapa_atual, c.nome AS consultor_nome
+            FROM prospects p
+            LEFT JOIN consultores c ON c.id = p.consultor_id
+            WHERE p.sequencia_email_id IS NOT NULL AND p.proximo_envio_email <= NOW()
+                  AND p.email_opt_out = FALSE AND p.status IN ('fila', 'contatado')
+            """
+        ).fetchall()
+
+        for p in pendentes:
+            etapas = conn.execute(
+                "SELECT assunto, corpo, dias_apos_anterior FROM sequencia_etapas "
+                "WHERE sequencia_id = %s ORDER BY ordem",
+                (p["sequencia_email_id"],),
+            ).fetchall()
+            if p["sequencia_etapa_atual"] >= len(etapas):
+                conn.execute(
+                    "UPDATE prospects SET sequencia_email_id = NULL, proximo_envio_email = NULL WHERE id = %s",
+                    (p["id"],),
+                )
+                continue
+
+            etapa = etapas[p["sequencia_etapa_atual"]]
+            token = _serializer_descadastro.dumps(p["id"])
+            assunto = _preencher_template_email(etapa["assunto"], p["decisor_nome"], p["empresa"], p["consultor_nome"])
+            corpo = _preencher_template_email(etapa["corpo"], p["decisor_nome"], p["empresa"], p["consultor_nome"])
+            corpo += f"\n\n---\nNão quer mais receber esses e-mails? Cancele aqui: {BASE_URL}/email/descadastro/{token}"
+
+            if not enviar_email(p["decisor_email"], assunto, corpo):
+                conn.execute(
+                    "UPDATE prospects SET proximo_envio_email = NOW() + INTERVAL '1 hour' WHERE id = %s",
+                    (p["id"],),
+                )
+                continue
+
+            conn.execute(
+                "INSERT INTO atividades (prospect_id, tipo, nota) VALUES (%s, 'email_automatico', %s)",
+                (p["id"], f'Enviado: "{assunto}"'),
+            )
+            proxima_ordem = p["sequencia_etapa_atual"] + 1
+            if proxima_ordem < len(etapas):
+                dias = etapas[proxima_ordem]["dias_apos_anterior"]
+                conn.execute(
+                    "UPDATE prospects SET sequencia_etapa_atual = %s, "
+                    "proximo_envio_email = NOW() + (%s || ' days')::interval WHERE id = %s",
+                    (proxima_ordem, dias, p["id"]),
+                )
+            else:
+                conn.execute(
+                    "UPDATE prospects SET sequencia_etapa_atual = %s, sequencia_email_id = NULL, "
+                    "proximo_envio_email = NULL WHERE id = %s",
+                    (proxima_ordem, p["id"]),
+                )
+        conn.commit()
+
+
+BASE_URL = os.environ.get("BASE_URL", "https://crm.engenhariadeclientes.com.br")
 
 
 @app.on_event("startup")
 def startup() -> None:
     aplicar_schema()
+    scheduler.add_job(processar_fila_email, "interval", minutes=5, id="fila_email", replace_existing=True)
+    scheduler.start()
 
 
 def _parsear_valor_brl(bruto: str) -> float | None:
@@ -314,6 +425,8 @@ def buscar(request: Request, categoria: str = Form(...), cidade: str = Form(...)
             ).fetchone()
             if row:
                 novos += 1
+                if email_captado:
+                    _enfileirar_sequencia_email(conn, row["id"])
 
         conn.execute(
             "UPDATE prospeccoes SET resultados_encontrados = %s, leads_novos = %s WHERE id = %s",
@@ -612,6 +725,8 @@ def atualizar_negocio(
                 prospect_id,
             ),
         )
+        if decisor_email.strip():
+            _enfileirar_sequencia_email(conn, prospect_id)
         conn.commit()
     return RedirectResponse(url=f"/prospects/{prospect_id}", status_code=303)
 
@@ -1065,3 +1180,86 @@ def exportar_csv(request: Request):
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=prospects.csv"},
     )
+
+
+# --------------------------------------------------------- e-mail automático
+
+@app.get("/email/descadastro/{token}")
+def email_descadastro(token: str):
+    try:
+        prospect_id = _serializer_descadastro.loads(token)
+    except BadSignature:
+        return PlainTextResponse("Link inválido.", status_code=400)
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE prospects SET email_opt_out = TRUE, sequencia_email_id = NULL, "
+            "proximo_envio_email = NULL WHERE id = %s",
+            (prospect_id,),
+        )
+        conn.commit()
+    return PlainTextResponse("Você não vai mais receber e-mails automáticos nossos. Obrigado.")
+
+
+@app.get("/sequencias-email")
+def sequencias_email_lista(request: Request):
+    redirect = exigir_admin(request)
+    if redirect:
+        return redirect
+    with get_connection() as conn:
+        sequencias = conn.execute("SELECT id, nome, ativa FROM sequencias_email ORDER BY nome").fetchall()
+        etapas = conn.execute(
+            "SELECT id, sequencia_id, ordem, dias_apos_anterior, assunto, corpo FROM sequencia_etapas ORDER BY sequencia_id, ordem"
+        ).fetchall()
+        contexto = _contexto_base(request, conn)
+    etapas_por_sequencia: dict[int, list] = {}
+    for e in etapas:
+        etapas_por_sequencia.setdefault(e["sequencia_id"], []).append(e)
+    contexto.update({"sequencias": sequencias, "etapas_por_sequencia": etapas_por_sequencia})
+    return templates.TemplateResponse("sequencias_email.html", contexto)
+
+
+@app.post("/sequencias-email/{sequencia_id}/toggle")
+def sequencias_email_toggle(request: Request, sequencia_id: int):
+    redirect = exigir_admin(request)
+    if redirect:
+        return redirect
+    with get_connection() as conn:
+        conn.execute("UPDATE sequencias_email SET ativa = NOT ativa WHERE id = %s", (sequencia_id,))
+        conn.commit()
+    return RedirectResponse(url="/sequencias-email", status_code=303)
+
+
+@app.post("/sequencias-email/{sequencia_id}/etapas")
+def sequencia_etapa_criar(
+    request: Request,
+    sequencia_id: int,
+    dias_apos_anterior: int = Form(0),
+    assunto: str = Form(...),
+    corpo: str = Form(...),
+):
+    redirect = exigir_admin(request)
+    if redirect:
+        return redirect
+    with get_connection() as conn:
+        proxima_ordem = conn.execute(
+            "SELECT COALESCE(MAX(ordem), 0) + 1 AS ordem FROM sequencia_etapas WHERE sequencia_id = %s",
+            (sequencia_id,),
+        ).fetchone()["ordem"]
+        conn.execute(
+            "INSERT INTO sequencia_etapas (sequencia_id, ordem, dias_apos_anterior, assunto, corpo) "
+            "VALUES (%s, %s, %s, %s, %s)",
+            (sequencia_id, proxima_ordem, dias_apos_anterior, assunto.strip(), corpo.strip()),
+        )
+        conn.commit()
+    return RedirectResponse(url="/sequencias-email", status_code=303)
+
+
+@app.post("/sequencias-email/etapas/{etapa_id}/excluir")
+def sequencia_etapa_excluir(request: Request, etapa_id: int):
+    redirect = exigir_admin(request)
+    if redirect:
+        return redirect
+    with get_connection() as conn:
+        conn.execute("DELETE FROM sequencia_etapas WHERE id = %s", (etapa_id,))
+        conn.commit()
+    return RedirectResponse(url="/sequencias-email", status_code=303)

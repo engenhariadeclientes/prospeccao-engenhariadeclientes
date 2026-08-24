@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Sequência de e-mail{% endblock %}
+{% block content %}
+<style>
+  .etapa { border: 1px solid #dde3ec; border-radius: 6px; padding: .8rem; margin-bottom: .6rem; background: #fff; }
+  .etapa .cabecalho { display: flex; justify-content: space-between; align-items: center; font-size: .85rem; color: #666; margin-bottom: .3rem; }
+  .etapa .corpo { white-space: pre-wrap; font-size: .85rem; color: #333; }
+  form.nova-etapa { display: flex; flex-direction: column; gap: .5rem; max-width: 520px; }
+  form.nova-etapa textarea { min-height: 140px; font-family: inherit; }
+</style>
+<h1>Sequência de e-mail</h1>
+<p style="color:#666; font-size:.9rem;">Todo prospect que tiver e-mail e estiver na Fila entra automaticamente na sequência ativa. Use <code>{{ '{{nome_decisor}}' }}</code>, <code>{{ '{{empresa}}' }}</code> e <code>{{ '{{consultor_nome}}' }}</code> no texto — são substituídos na hora do envio.</p>
+
+{% for s in sequencias %}
+<div class="card">
+  <div style="display:flex; justify-content:space-between; align-items:center;">
+    <h2 style="font-size:1.1rem; margin:0;">{{ s.nome }} {% if s.ativa %}<span style="color:#1a7a1a; font-size:.8rem;">● ativa</span>{% else %}<span style="color:#999; font-size:.8rem;">● inativa</span>{% endif %}</h2>
+    <form method="post" action="/sequencias-email/{{ s.id }}/toggle">
+      <button type="submit" class="secundario" style="font-size:.8rem;">{{ 'Desativar' if s.ativa else 'Ativar' }}</button>
+    </form>
+  </div>
+
+  {% for e in etapas_por_sequencia.get(s.id, []) %}
+  <div class="etapa">
+    <div class="cabecalho">
+      <span>Etapa {{ e.ordem }}{% if e.dias_apos_anterior %} — {{ e.dias_apos_anterior }} dia(s) após a anterior{% else %} — imediata{% endif %}</span>
+      <form method="post" action="/sequencias-email/etapas/{{ e.id }}/excluir" onsubmit="return confirm('Excluir esta etapa?');">
+        <button type="submit" class="secundario" style="font-size:.75rem; padding:.1rem .4rem;">Excluir</button>
+      </form>
+    </div>
+    <strong>{{ e.assunto }}</strong>
+    <div class="corpo">{{ e.corpo }}</div>
+  </div>
+  {% else %}
+  <p style="font-size:.85rem; color:#999;">Nenhuma etapa cadastrada — a sequência não vai disparar nada.</p>
+  {% endfor %}
+
+  <details style="margin-top:.6rem;">
+    <summary style="cursor:pointer; font-size:.85rem;">+ Adicionar etapa</summary>
+    <form class="nova-etapa" method="post" action="/sequencias-email/{{ s.id }}/etapas" style="margin-top:.6rem;">
+      <label>Dias após a etapa anterior (0 = imediato/primeira etapa)
+        <input type="number" name="dias_apos_anterior" value="0" min="0">
+      </label>
+      <label>Assunto
+        <input type="text" name="assunto" required>
+      </label>
+      <label>Corpo do e-mail
+        <textarea name="corpo" required></textarea>
+      </label>
+      <button type="submit">Adicionar etapa</button>
+    </form>
+  </details>
+</div>
+{% else %}
+<p>Nenhuma sequência cadastrada.</p>
+{% endfor %}
+{% endblock %}
