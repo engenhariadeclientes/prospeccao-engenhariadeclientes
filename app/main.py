@@ -62,7 +62,7 @@ REMETENTE_INSTITUCIONAL = "Stella Maris"
 
 def _preencher_template_email(texto: str, decisor_nome: str | None, empresa: str | None) -> str:
     return (
-        texto.replace("{{nome_decisor}}", decisor_nome or "")
+        texto.replace("{{nome_decisor}}", decisor_nome or empresa or "")
         .replace("{{empresa}}", empresa or "sua empresa")
         .replace("{{consultor_nome}}", REMETENTE_INSTITUCIONAL)
     )
@@ -1074,9 +1074,19 @@ def admin_dashboard(request: Request, data_de: str = "", data_ate: str = ""):
             """
         ).fetchone()["total"]
 
+        metricas_email = conn.execute(
+            """
+            SELECT
+              (SELECT COUNT(*) FROM prospects WHERE decisor_email IS NOT NULL) AS total_contatos_email,
+              (SELECT COUNT(*) FROM atividades WHERE tipo = 'email_automatico' AND nota LIKE 'Enviado:%%') AS emails_disparados,
+              (SELECT COUNT(DISTINCT prospect_id) FROM atividades WHERE tipo = 'email_automatico' AND nota LIKE 'Resposta recebida:%%') AS emails_respondidos
+            """
+        ).fetchone()
+
         contexto = _contexto_base(request, conn)
 
     contexto.update({
+        "metricas_email": metricas_email,
         "funil_counts": funil_counts,
         "total_prospects": total_prospects,
         "status_validos": STATUS_VALIDOS,
@@ -1295,6 +1305,10 @@ def sequencias_email_lista(request: Request):
             "SELECT COUNT(*) AS total FROM prospects "
             "WHERE site IS NOT NULL AND decisor_email IS NULL AND status IN ('fila', 'contatado')"
         ).fetchone()["total"]
+        candidatos_sem_site = conn.execute(
+            "SELECT COUNT(*) AS total FROM prospects "
+            "WHERE site IS NULL AND decisor_email IS NULL AND status IN ('fila', 'contatado')"
+        ).fetchone()["total"]
         contexto = _contexto_base(request, conn)
     etapas_por_sequencia: dict[int, list] = {}
     for e in etapas:
@@ -1306,6 +1320,7 @@ def sequencias_email_lista(request: Request):
         "origem_label": ORIGEM_CADASTRO_LABEL,
         "candidatos_matricula": candidatos_matricula,
         "candidatos_recaptura": candidatos_recaptura,
+        "candidatos_sem_site": candidatos_sem_site,
     })
     return templates.TemplateResponse("sequencias_email.html", contexto)
 
@@ -1345,6 +1360,47 @@ def sequencias_email_recapturar_emails(request: Request):
                     "UPDATE prospects SET decisor_email = %s, email_origem = 'site' WHERE id = %s",
                     (email_captado, c["id"]),
                 )
+                _enfileirar_sequencia_email(conn, c["id"])
+        conn.commit()
+    return RedirectResponse(url="/sequencias-email", status_code=303)
+
+
+@app.post("/sequencias-email/recapturar-sites")
+def sequencias_email_recapturar_sites(request: Request):
+    """Pra leads antigos que nunca tiveram o site capturado (de antes dessa
+    funcionalidade existir): busca de novo no Google Places por nome+cidade só
+    pra achar o site, e a partir dele tenta o e-mail. Cada item aqui consome
+    uma chamada paga da API do Google, então o lote é bem menor que o de
+    recapturar-emails (que é de graça, só visita o site que já se conhece)."""
+    redirect = exigir_admin(request)
+    if redirect:
+        return redirect
+    api_key = os.environ.get("GOOGLE_PLACES_API_KEY")
+    if not api_key:
+        return RedirectResponse(url="/sequencias-email", status_code=303)
+    with get_connection() as conn:
+        candidatos = conn.execute(
+            "SELECT id, nome, cidade FROM prospects WHERE site IS NULL AND decisor_email IS NULL "
+            "AND status IN ('fila', 'contatado') AND nome IS NOT NULL LIMIT 20"
+        ).fetchall()
+        for c in candidatos:
+            query = f"{c['nome']} {c['cidade']}" if c["cidade"] else c["nome"]
+            try:
+                primeiro = next(buscar_empresas(api_key, query, max_resultados=1), None)
+            except Exception:
+                continue
+            if not primeiro:
+                continue
+            site = primeiro.get("websiteUri")
+            if not site:
+                continue
+            email_captado = buscar_email_no_site(site)
+            conn.execute(
+                "UPDATE prospects SET site = %s, decisor_email = COALESCE(decisor_email, %s), "
+                "email_origem = CASE WHEN %s IS NOT NULL THEN 'site' ELSE email_origem END WHERE id = %s",
+                (site, email_captado, email_captado, c["id"]),
+            )
+            if email_captado:
                 _enfileirar_sequencia_email(conn, c["id"])
         conn.commit()
     return RedirectResponse(url="/sequencias-email", status_code=303)

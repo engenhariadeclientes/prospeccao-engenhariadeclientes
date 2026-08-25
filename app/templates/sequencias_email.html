@@ -20,6 +20,10 @@
     <span style="font-size:.85rem;"><strong>{{ candidatos_recaptura }}</strong> com site mas sem e-mail ainda{% if candidatos_recaptura > 50 %} (processa 50 por clique){% endif %}</span>
     <button type="submit" class="secundario" {{ 'disabled' if not candidatos_recaptura else '' }}>Recapturar e-mails</button>
   </form>
+  <form method="post" action="/sequencias-email/recapturar-sites" style="display:flex; gap:.6rem; align-items:center;" onsubmit="return confirm('Isso consulta a API do Google Places de novo (paga) pra cada um dos até 20 negócios sem site. Continuar?');">
+    <span style="font-size:.85rem;"><strong>{{ candidatos_sem_site }}</strong> sem site nem e-mail ainda{% if candidatos_sem_site > 20 %} (processa 20 por clique){% endif %} <span style="color:#b3550a;">— usa API paga</span></span>
+    <button type="submit" class="secundario" {{ 'disabled' if not candidatos_sem_site else '' }}>Buscar site + e-mail</button>
+  </form>
 </div>
 
 {% for s in sequencias %}

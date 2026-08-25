@@ -10,6 +10,10 @@
   .filtro-data { display: flex; gap: .6rem; align-items: flex-end; flex-wrap: wrap; margin: .5rem 0 1.2rem; padding: .8rem; background: var(--navy-bg); border-radius: 8px; }
   .filtro-data label { font-size: .8rem; color: #444; display: flex; flex-direction: column; gap: .2rem; }
   .filtro-data .atalhos { display: flex; gap: .4rem; font-size: .8rem; }
+  .stats-email { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+  .stat-tile { flex: 1 1 180px; background: var(--navy-bg); border-radius: 8px; padding: 1rem; }
+  .stat-tile .numero { font-size: 1.8rem; font-weight: 700; color: var(--navy); display: block; }
+  .stat-tile .rotulo { font-size: .8rem; color: #555; }
 </style>
 <h1>Painel Gerencial</h1>
 
@@ -22,6 +26,23 @@
   <span class="valor">R$ {{ '%.2f'|format(valor_por_status.get(status, 0))|replace('.', ',') }}</span>
 </div>
 {% endfor %}
+
+<h2 style="font-size:1.1rem">E-mail automático</h2>
+<div class="stats-email">
+  <div class="stat-tile">
+    <span class="numero">{{ metricas_email.total_contatos_email }}</span>
+    <span class="rotulo">Negócios com e-mail do decisor</span>
+  </div>
+  <div class="stat-tile">
+    <span class="numero">{{ metricas_email.emails_disparados }}</span>
+    <span class="rotulo">E-mails disparados no total</span>
+  </div>
+  <div class="stat-tile">
+    <span class="numero">{{ metricas_email.emails_respondidos }}</span>
+    <span class="rotulo">Negócios com resposta recebida</span>
+  </div>
+</div>
+<p style="font-size:.8rem; color:#666; margin-top:-1rem;">O Gmail não informa abertura de e-mail — essas métricas são baseadas em envio confirmado e resposta recebida na caixa de entrada.</p>
 
 {% if sem_proxima_acao %}
 <div class="card" style="background:#fdecea; border-color:#f3b8b3; display:flex; justify-content:space-between; align-items:center;">
