@@ -78,18 +78,27 @@ def _preencher_template_email(texto: str, decisor_nome: str | None, empresa: str
 
 def _melhor_sequencia_email(conn, origem_cadastro: str, produto_id: int | None):
     """Escolhe a sequência ativa mais específica pra essa combinação de origem (busca
-    automática/manual/ads) + produto de interesse. Uma sequência com origem/produto em
-    branco serve de curinga; a mais específica (as duas condições batendo) ganha."""
+    automática/manual/ads) + produto de interesse. Uma sequência sem produto vinculado
+    serve de curinga; a mais específica (as duas condições batendo) ganha.
+
+    Uma sequência pode cobrir vários produtos (tabela sequencia_produtos), porque casos
+    como o da Escola atendem mais de um produto com o mesmo texto."""
     return conn.execute(
         """
-        SELECT id FROM sequencias_email
-        WHERE ativa = TRUE
-              AND (origem = %s OR origem IS NULL)
-              AND (produto_id = %s OR produto_id IS NULL)
-        ORDER BY (origem IS NOT NULL)::int + (produto_id IS NOT NULL)::int DESC, id
+        SELECT s.id
+        FROM sequencias_email s
+        WHERE s.ativa = TRUE
+              AND (s.origem = %(origem)s OR s.origem IS NULL)
+              AND (NOT EXISTS (SELECT 1 FROM sequencia_produtos sp WHERE sp.sequencia_id = s.id)
+                   OR EXISTS (SELECT 1 FROM sequencia_produtos sp
+                              WHERE sp.sequencia_id = s.id AND sp.produto_id = %(produto)s))
+        ORDER BY (s.origem IS NOT NULL)::int
+                 + EXISTS (SELECT 1 FROM sequencia_produtos sp
+                           WHERE sp.sequencia_id = s.id AND sp.produto_id = %(produto)s)::int DESC,
+                 s.id
         LIMIT 1
         """,
-        (origem_cadastro, produto_id),
+        {"origem": origem_cadastro, "produto": produto_id},
     ).fetchone()
 
 
@@ -1497,7 +1506,10 @@ def sequencias_email_lista(
     with get_connection() as conn:
         sequencias = conn.execute(
             """
-            SELECT s.id, s.nome, s.ativa, s.origem, s.produto_id, p.nome AS produto_nome
+            SELECT s.id, s.nome, s.ativa, s.origem, s.produto_id, p.nome AS produto_nome,
+                   (SELECT string_agg(pr.nome, ', ' ORDER BY pr.nome)
+                    FROM sequencia_produtos sp JOIN produtos pr ON pr.id = sp.produto_id
+                    WHERE sp.sequencia_id = s.id) AS produtos_nomes
             FROM sequencias_email s LEFT JOIN produtos p ON p.id = s.produto_id
             ORDER BY s.nome
             """

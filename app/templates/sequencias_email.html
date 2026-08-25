@@ -94,7 +94,7 @@
     <div>
       <h2 style="font-size:1.1rem; margin:0;">{{ s.nome }} {% if s.ativa %}<span style="color:#1a7a1a; font-size:.8rem;">● ativa</span>{% else %}<span style="color:#999; font-size:.8rem;">● inativa</span>{% endif %}</h2>
       <span style="font-size:.8rem; color:#666;">
-        Origem: {{ origem_label.get(s.origem, 'qualquer') }} · Produto: {{ s.produto_nome or 'qualquer' }}
+        Origem: {{ origem_label.get(s.origem, 'qualquer') }} · Produto: {{ s.produtos_nomes or 'qualquer' }}
       </span>
     </div>
     <form method="post" action="/sequencias-email/{{ s.id }}/toggle">
