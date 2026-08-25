@@ -9,12 +9,17 @@
   form.nova-etapa textarea { min-height: 140px; font-family: inherit; }
 </style>
 <h1>Sequência de e-mail</h1>
-<p style="color:#666; font-size:.9rem;">Todo prospect que tiver e-mail e estiver na Fila entra automaticamente na sequência ativa. Use <code>{{ '{{nome_decisor}}' }}</code>, <code>{{ '{{empresa}}' }}</code> e <code>{{ '{{consultor_nome}}' }}</code> no texto — são substituídos na hora do envio.</p>
+<p style="color:#666; font-size:.9rem;">Todo prospect com e-mail que estiver na Fila entra automaticamente na sequência ativa mais específica pra ele: primeiro tenta bater origem + produto, depois só origem, depois cai na sequência sem origem/produto definidos (curinga). Use <code>{{ '{{nome_decisor}}' }}</code>, <code>{{ '{{empresa}}' }}</code> e <code>{{ '{{consultor_nome}}' }}</code> no texto — são substituídos na hora do envio.</p>
 
 {% for s in sequencias %}
 <div class="card">
   <div style="display:flex; justify-content:space-between; align-items:center;">
-    <h2 style="font-size:1.1rem; margin:0;">{{ s.nome }} {% if s.ativa %}<span style="color:#1a7a1a; font-size:.8rem;">● ativa</span>{% else %}<span style="color:#999; font-size:.8rem;">● inativa</span>{% endif %}</h2>
+    <div>
+      <h2 style="font-size:1.1rem; margin:0;">{{ s.nome }} {% if s.ativa %}<span style="color:#1a7a1a; font-size:.8rem;">● ativa</span>{% else %}<span style="color:#999; font-size:.8rem;">● inativa</span>{% endif %}</h2>
+      <span style="font-size:.8rem; color:#666;">
+        Origem: {{ origem_label.get(s.origem, 'qualquer') }} · Produto: {{ s.produto_nome or 'qualquer' }}
+      </span>
+    </div>
     <form method="post" action="/sequencias-email/{{ s.id }}/toggle">
       <button type="submit" class="secundario" style="font-size:.8rem;">{{ 'Desativar' if s.ativa else 'Ativar' }}</button>
     </form>
@@ -54,4 +59,30 @@
 {% else %}
 <p>Nenhuma sequência cadastrada.</p>
 {% endfor %}
+
+<div class="card" style="max-width:420px;">
+  <h2 style="font-size:1.1rem; margin-top:0;">Nova sequência</h2>
+  <form method="post" action="/sequencias-email" style="display:flex; flex-direction:column; gap:.5rem;">
+    <label>Nome
+      <input type="text" name="nome" required placeholder="Ex.: Outbound — Formação IA">
+    </label>
+    <label>Origem
+      <select name="origem">
+        <option value="">Qualquer origem</option>
+        <option value="busca_automatica">Busca automática (outbound)</option>
+        <option value="manual">Cadastro manual</option>
+        <option value="ads">Anúncios</option>
+      </select>
+    </label>
+    <label>Produto de interesse
+      <select name="produto_id">
+        <option value="">Qualquer produto</option>
+        {% for p in produtos %}
+        <option value="{{ p.id }}">{{ p.nome }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit">Criar sequência</button>
+  </form>
+</div>
 {% endblock %}

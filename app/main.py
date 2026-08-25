@@ -64,19 +64,42 @@ def _preencher_template_email(texto: str, decisor_nome: str | None, empresa: str
     )
 
 
+def _melhor_sequencia_email(conn, origem_cadastro: str, produto_id: int | None):
+    """Escolhe a sequência ativa mais específica pra essa combinação de origem (busca
+    automática/manual/ads) + produto de interesse. Uma sequência com origem/produto em
+    branco serve de curinga; a mais específica (as duas condições batendo) ganha."""
+    return conn.execute(
+        """
+        SELECT id FROM sequencias_email
+        WHERE ativa = TRUE
+              AND (origem = %s OR origem IS NULL)
+              AND (produto_id = %s OR produto_id IS NULL)
+        ORDER BY (origem IS NOT NULL)::int + (produto_id IS NOT NULL)::int DESC, id
+        LIMIT 1
+        """,
+        (origem_cadastro, produto_id),
+    ).fetchone()
+
+
 def _enfileirar_sequencia_email(conn, prospect_id: int) -> None:
-    """Matricula o prospect na sequência de e-mail padrão, se elegível: tem e-mail,
-    ainda não está em nenhuma sequência, não descadastrou e está em etapa inicial do funil."""
+    """Matricula (ou, se ainda não mandou nada, reajusta) o prospect na sequência de
+    e-mail mais específica pra ele, se elegível: tem e-mail, não descadastrou e está
+    em etapa inicial do funil. Não mexe em quem já recebeu pelo menos um e-mail, pra
+    não trocar o texto no meio da conversa."""
     prospect = conn.execute(
-        "SELECT decisor_email, status, sequencia_email_id, email_opt_out FROM prospects WHERE id = %s",
+        "SELECT decisor_email, status, sequencia_email_id, sequencia_etapa_atual, "
+        "email_opt_out, produto_id, origem_cadastro FROM prospects WHERE id = %s",
         (prospect_id,),
     ).fetchone()
-    if not prospect or not prospect["decisor_email"] or prospect["sequencia_email_id"] or prospect["email_opt_out"]:
+    if not prospect or not prospect["decisor_email"] or prospect["email_opt_out"]:
         return
     if prospect["status"] not in ("fila", "contatado"):
         return
-    sequencia = conn.execute("SELECT id FROM sequencias_email WHERE ativa = TRUE ORDER BY id LIMIT 1").fetchone()
-    if not sequencia:
+    if prospect["sequencia_email_id"] and prospect["sequencia_etapa_atual"] > 0:
+        return
+
+    sequencia = _melhor_sequencia_email(conn, prospect["origem_cadastro"], prospect["produto_id"])
+    if not sequencia or sequencia["id"] == prospect["sequencia_email_id"]:
         return
     primeira_etapa = conn.execute(
         "SELECT dias_apos_anterior FROM sequencia_etapas WHERE sequencia_id = %s ORDER BY ordem LIMIT 1",
@@ -412,8 +435,8 @@ def buscar(request: Request, categoria: str = Form(...), cidade: str = Form(...)
             email_captado = buscar_email_no_site(site) if site else None
             row = conn.execute(
                 """
-                INSERT INTO prospects (prospeccao_id, nome, telefone, endereco, cidade, uf, categoria, categoria_aquisicao_id, site, decisor_email, email_origem)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO prospects (prospeccao_id, nome, telefone, endereco, cidade, uf, categoria, categoria_aquisicao_id, site, decisor_email, email_origem, origem_cadastro)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'busca_automatica')
                 ON CONFLICT (telefone) WHERE telefone IS NOT NULL DO NOTHING
                 RETURNING id
                 """,
@@ -725,8 +748,7 @@ def atualizar_negocio(
                 prospect_id,
             ),
         )
-        if decisor_email.strip():
-            _enfileirar_sequencia_email(conn, prospect_id)
+        _enfileirar_sequencia_email(conn, prospect_id)
         conn.commit()
     return RedirectResponse(url=f"/prospects/{prospect_id}", status_code=303)
 
@@ -1200,22 +1222,61 @@ def email_descadastro(token: str):
     return PlainTextResponse("Você não vai mais receber e-mails automáticos nossos. Obrigado.")
 
 
+ORIGEM_CADASTRO_LABEL = {
+    "busca_automatica": "Busca automática (outbound)",
+    "manual": "Cadastro manual",
+    "ads": "Anúncios",
+}
+
+
 @app.get("/sequencias-email")
 def sequencias_email_lista(request: Request):
     redirect = exigir_admin(request)
     if redirect:
         return redirect
     with get_connection() as conn:
-        sequencias = conn.execute("SELECT id, nome, ativa FROM sequencias_email ORDER BY nome").fetchall()
+        sequencias = conn.execute(
+            """
+            SELECT s.id, s.nome, s.ativa, s.origem, s.produto_id, p.nome AS produto_nome
+            FROM sequencias_email s LEFT JOIN produtos p ON p.id = s.produto_id
+            ORDER BY s.nome
+            """
+        ).fetchall()
         etapas = conn.execute(
             "SELECT id, sequencia_id, ordem, dias_apos_anterior, assunto, corpo FROM sequencia_etapas ORDER BY sequencia_id, ordem"
         ).fetchall()
+        produtos = conn.execute("SELECT id, nome FROM produtos ORDER BY nome").fetchall()
         contexto = _contexto_base(request, conn)
     etapas_por_sequencia: dict[int, list] = {}
     for e in etapas:
         etapas_por_sequencia.setdefault(e["sequencia_id"], []).append(e)
-    contexto.update({"sequencias": sequencias, "etapas_por_sequencia": etapas_por_sequencia})
+    contexto.update({
+        "sequencias": sequencias,
+        "etapas_por_sequencia": etapas_por_sequencia,
+        "produtos": produtos,
+        "origem_label": ORIGEM_CADASTRO_LABEL,
+    })
     return templates.TemplateResponse("sequencias_email.html", contexto)
+
+
+@app.post("/sequencias-email")
+def sequencias_email_criar(
+    request: Request,
+    nome: str = Form(...),
+    origem: str = Form(""),
+    produto_id: str = Form(""),
+):
+    redirect = exigir_admin(request)
+    if redirect:
+        return redirect
+    with get_connection() as conn:
+        conn.execute(
+            "INSERT INTO sequencias_email (nome, origem, produto_id) VALUES (%s, %s, %s) "
+            "ON CONFLICT (nome) DO NOTHING",
+            (nome.strip(), origem or None, int(produto_id) if produto_id else None),
+        )
+        conn.commit()
+    return RedirectResponse(url="/sequencias-email", status_code=303)
 
 
 @app.post("/sequencias-email/{sequencia_id}/toggle")
