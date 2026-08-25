@@ -53,8 +53,8 @@
     <span class="badge-status {{ 'liberado' if busca_liberada else 'bloqueado' }}">{{ '🔓 liberado' if busca_liberada else '🔒 bloqueado' }}</span>
   </summary>
   <div class="painel-busca-corpo">
-    <div style="display:flex; gap:.5rem; flex-wrap:wrap; align-items:flex-start;">
-      <form class="busca" method="post" action="/buscar">
+    <div style="display:flex; gap:.5rem; flex-wrap:wrap; align-items:center;">
+      <form class="busca" method="post" action="/buscar" style="align-items:center;">
         <input type="text" name="categoria" placeholder="Categoria (ex.: garantidora de receita)" required {{ 'disabled' if not busca_liberada else '' }}>
         <input type="text" name="cidade" placeholder="Cidade (ex.: Blumenau, SC)" required {{ 'disabled' if not busca_liberada else '' }}>
         <select name="produto_id" title="Produto/segmento — define a oferta e a régua de e-mail dessa leva de leads" {{ 'disabled' if not busca_liberada else '' }}>
@@ -68,7 +68,7 @@
       </form>
       {% if consultor.is_admin %}
       <form method="post" action="/busca/toggle">
-        <button type="submit" class="{{ '' if busca_liberada else 'secundario' }}" style="font-size:.8rem;">
+        <button type="submit" class="{{ '' if busca_liberada else 'secundario' }}" style="font-size:.9rem; padding:.5rem 1rem;">
           {{ '🔒 Bloquear busca' if busca_liberada else '🔓 Liberar busca' }}
         </button>
       </form>
