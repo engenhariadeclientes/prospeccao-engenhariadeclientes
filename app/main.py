@@ -1489,6 +1489,7 @@ def sequencias_email_lista(
     recap_emails: str = "",
     recap_erros: str = "",
     recap_erro: str = "",
+    salvo: str = "",
 ):
     redirect = exigir_admin(request)
     if redirect:
@@ -1535,6 +1536,7 @@ def sequencias_email_lista(
         "recap_emails": recap_emails,
         "recap_erros": recap_erros,
         "recap_erro": recap_erro,
+        "salvo": salvo,
         "email_provedor": provedor_email(),
         "email_credencial": testar_envio_cache(),
         "email_ultimo_erro": ultimo_erro_envio(),
@@ -1688,6 +1690,29 @@ def sequencia_etapa_criar(
         )
         conn.commit()
     return RedirectResponse(url="/sequencias-email", status_code=303)
+
+
+@app.post("/sequencias-email/etapas/{etapa_id}/editar")
+def sequencia_etapa_editar(
+    request: Request,
+    etapa_id: int,
+    dias_apos_anterior: int = Form(0),
+    assunto: str = Form(...),
+    corpo: str = Form(...),
+):
+    """Edição do texto direto no CRM. Só mexe no conteúdo da etapa: quem já está na
+    régua continua na mesma posição, e recebe o texto novo a partir da próxima etapa."""
+    redirect = exigir_admin(request)
+    if redirect:
+        return redirect
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE sequencia_etapas SET assunto = %s, corpo = %s, dias_apos_anterior = %s "
+            "WHERE id = %s",
+            (assunto.strip(), corpo.strip(), max(0, dias_apos_anterior), etapa_id),
+        )
+        conn.commit()
+    return RedirectResponse(url="/sequencias-email?salvo=1", status_code=303)
 
 
 @app.post("/sequencias-email/etapas/{etapa_id}/excluir")

@@ -7,9 +7,22 @@
   .etapa .corpo { white-space: pre-wrap; font-size: .85rem; color: #333; }
   form.nova-etapa { display: flex; flex-direction: column; gap: .5rem; max-width: 520px; }
   form.nova-etapa textarea { min-height: 140px; font-family: inherit; }
+  .editor { margin-top: .5rem; border-top: 1px solid #eef1f5; padding-top: .4rem; }
+  .editor summary { cursor: pointer; font-size: .8rem; color: #4a6fa5; }
+  .editor form { display: flex; flex-direction: column; gap: .7rem; margin-top: .6rem; }
+  .editor label { display: block; font-size: .8rem; color: #555; }
+  .editor input[type=text], .editor textarea { display: block; width: 100%; margin-top: .2rem; box-sizing: border-box; }
+  .editor textarea { min-height: 260px; font-family: inherit; font-size: .85rem; line-height: 1.45; }
+  .editor input[type=number] { display: block; width: 7rem; margin-top: .2rem; }
+  .editor .acoes { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+  .editor .dica { font-size: .75rem; color: #888; }
 </style>
 <h1>Sequência de e-mail</h1>
 <p style="color:#666; font-size:.9rem;">Todo prospect com e-mail que estiver na Fila entra automaticamente na sequência ativa mais específica pra ele: primeiro tenta bater origem + produto, depois só origem, depois cai na sequência sem origem/produto definidos (curinga). Use <code>{{ '{{nome_decisor}}' }}</code>, <code>{{ '{{empresa}}' }}</code> e <code>{{ '{{consultor_nome}}' }}</code> no texto — são substituídos na hora do envio.</p>
+
+{% if salvo %}
+<div class="card" style="background:#eef7ee; border-color:#bfe3bf;">✓ Texto do e-mail atualizado.</div>
+{% endif %}
 
 {% if ': ok' in email_credencial and not email_ultimo_erro %}
 <div class="card" style="background:#eef7ee; border-color:#bfe3bf;">
@@ -99,6 +112,24 @@
     </div>
     <strong>{{ e.assunto }}</strong>
     <div class="corpo">{{ e.corpo }}</div>
+    <details class="editor">
+      <summary>✎ Editar este e-mail</summary>
+      <form method="post" action="/sequencias-email/etapas/{{ e.id }}/editar">
+        <label>Assunto
+          <input type="text" name="assunto" value="{{ e.assunto }}" required>
+        </label>
+        <label>Corpo do e-mail
+          <textarea name="corpo" required>{{ e.corpo }}</textarea>
+        </label>
+        <label>Dias após a etapa anterior (0 = imediato)
+          <input type="number" name="dias_apos_anterior" value="{{ e.dias_apos_anterior }}" min="0">
+        </label>
+        <div class="acoes">
+          <button type="submit">Salvar alterações</button>
+          <span class="dica">Use {{ '{{nome_decisor}}' }}, {{ '{{empresa}}' }} e {{ '{{consultor_nome}}' }} — são trocados no envio.</span>
+        </div>
+      </form>
+    </details>
   </div>
   {% else %}
   <p style="font-size:.85rem; color:#999;">Nenhuma etapa cadastrada — a sequência não vai disparar nada.</p>
