@@ -9,10 +9,11 @@
     body { font-family: system-ui, sans-serif; max-width: 1100px; margin: 0 auto 2rem; padding: 0 1rem; color: #1a1a1a; background: #fff; }
     h1 { font-size: 1.4rem; color: var(--navy); }
     a { color: var(--navy); }
-    nav { display: flex; justify-content: space-between; align-items: center; margin: 0 -1rem 1.5rem; padding: 1rem 1.5rem; background: var(--navy); color: #fff; }
-    nav strong { letter-spacing: .02em; display: flex; align-items: center; gap: .5rem; }
+    nav { display: flex; justify-content: space-between; align-items: center; margin: 0 -1rem 1.5rem; padding: 1rem 1.5rem; background: var(--navy); color: #fff; flex-wrap: wrap; gap: .6rem; }
+    nav strong { letter-spacing: .02em; display: flex; align-items: center; gap: .5rem; white-space: nowrap; }
     nav strong img { height: 28px; width: 28px; }
-    nav .links { display: flex; gap: 1.2rem; align-items: center; font-size: .9rem; }
+    nav .links { display: flex; gap: .9rem; align-items: center; font-size: .88rem; flex-wrap: wrap; }
+    nav .links > span, nav .links > a, nav .links > details > summary { white-space: nowrap; }
     nav .links > span { color: #dce6f5; }
     nav a { color: #dce6f5; text-decoration: none; }
     nav a:hover { color: #fff; text-decoration: underline; }
@@ -44,14 +45,14 @@
     <div class="links">
       <span>{{ consultor.nome }}</span>
       <a href="/">Funil</a>
-      <a href="/prospects/novo">+ Novo negócio</a>
+      <a href="/prospects/novo">+ Negócio</a>
       <a href="/agenda">Agenda{% if pendencias %} 🔔 {{ pendencias }}{% endif %}</a>
       {% if consultor.is_admin %}
+      <a href="/sequencias-email">✉️ E-mails</a>
       <details class="dropdown">
-        <summary>Administração ▾</summary>
+        <summary>Admin ▾</summary>
         <div class="menu">
           <a href="/admin">📊 Painel Gerencial</a>
-          <a href="/sequencias-email">✉️ Sequência de e-mail</a>
           <div class="divisor"></div>
           <a href="/produtos">Produtos</a>
           <a href="/motivos-perda">Motivos de perda</a>

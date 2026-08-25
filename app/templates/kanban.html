@@ -23,11 +23,13 @@
   .filtros label { font-size: .8rem; color: #444; display: flex; flex-direction: column; gap: .2rem; }
 
   .board { display: flex; gap: 1rem; overflow-x: auto; padding-bottom: 1rem; }
-  .coluna { flex: 0 0 270px; background: var(--navy-bg); border-radius: 8px; padding: .75rem; }
-  .coluna h3 { font-size: .95rem; margin: 0 0 .3rem 0; display: flex; justify-content: space-between; align-items: center; color: var(--navy); }
+  .coluna { flex: 0 0 270px; background: var(--navy-bg); border-radius: 8px; padding: .75rem; display: flex; flex-direction: column; max-height: 72vh; }
+  .coluna h3 { font-size: .95rem; margin: 0 0 .3rem 0; display: flex; justify-content: space-between; align-items: center; color: var(--navy); flex: 0 0 auto; }
   .coluna h3 .contagem { font-size: .78rem; padding: .05rem .55rem; border-radius: 999px; background: #e4e9f2; color: var(--navy); }
   .coluna h3 .contagem.alerta { background: #fdecea; color: #c0392b; font-weight: 700; }
-  .coluna .soma { font-size: .75rem; color: #666; margin-bottom: .5rem; }
+  .coluna .soma { font-size: .75rem; color: #666; margin-bottom: .5rem; flex: 0 0 auto; }
+  .coluna .cartoes { overflow-y: auto; flex: 1 1 auto; padding-right: .3rem; margin-right: -.3rem; }
+  .badge-email { display: inline-flex; align-items: center; gap: .2rem; font-size: .72rem; background: #eaf2fb; color: #2a6fad; padding: .1rem .5rem; border-radius: 999px; margin-bottom: .35rem; }
 
   .prospect-card { background: #fff; border: 1px solid #dde3ec; border-left: 3px solid var(--navy); border-radius: 6px; padding: .7rem; margin-bottom: .5rem; font-size: .85rem; }
   .prospect-card .nome { font-weight: 700; font-size: 1rem; display: block; margin-bottom: .2rem; color: var(--navy); }
@@ -131,9 +133,13 @@
       <span class="contagem {{ 'alerta' if status == 'fila' and colunas[status]|length > 15 else '' }}">{{ colunas[status]|length }}</span>
     </h3>
     <div class="soma">R$ {{ '%.2f'|format(somas_coluna[status])|replace('.', ',') }} em negócios</div>
+    <div class="cartoes">
     {% for p in colunas[status] %}
     <div class="prospect-card">
       <span class="nome">{{ p.nome or 'Sem nome' }}</span>
+      {% if p.sequencia_email_id %}
+      <span class="badge-email" title="Régua de e-mail automática ativa pra esse negócio">✉️ Cadência de e-mail ativa</span>
+      {% endif %}
       <span class="meta">{{ p.cidade or '—' }}{% if p.uf %}/{{ p.uf }}{% endif %} · {{ p.categoria }}</span>
       <span class="meta">📞 <a href="tel:{{ p.telefone }}">{{ p.telefone }}</a></span>
 
@@ -165,6 +171,7 @@
     {% else %}
     <p style="font-size:.8rem; color:#999;">Vazio</p>
     {% endfor %}
+    </div>
   </div>
   {% endfor %}
 </div>
