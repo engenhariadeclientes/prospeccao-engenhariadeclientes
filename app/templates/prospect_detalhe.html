@@ -189,6 +189,23 @@
   </form>
 </div>
 
+<div class="card" style="display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap;">
+  {% if prospect.sequencia_email_id %}
+  <span>✉️ Na régua de e-mail: <strong>{{ prospect.sequencia_nome }}</strong> — etapa {{ prospect.sequencia_etapa_atual + 1 }} de {{ prospect.sequencia_total_etapas }}</span>
+  {% elif prospect.email_opt_out %}
+  <span style="color:#c0392b;">🚫 Esse contato pediu pra sair das réguas automáticas de e-mail.</span>
+  {% elif prospect.decisor_email and prospect.status in ('fila', 'contatado') %}
+  <span style="color:#666;">Esse negócio ainda não entrou em nenhuma sequência de e-mail.</span>
+  <form method="post" action="/prospects/{{ prospect.id }}/email/matricular">
+    <button type="submit">✉️ Iniciar sequência de e-mail</button>
+  </form>
+  {% elif prospect.decisor_email %}
+  <span style="color:#666;">✉️ E-mail cadastrado, mas o negócio já saiu de Fila/Contatado — a régua automática não se aplica mais aqui.</span>
+  {% else %}
+  <span style="color:#666;">Cadastre um e-mail do decisor acima pra poder iniciar uma sequência automática.</span>
+  {% endif %}
+</div>
+
 <div class="card">
   <h2 style="font-size:1.1rem; margin-top:0;">Registrar na linha do tempo</h2>
   <form method="post" action="/prospects/{{ prospect.id }}/atividades" class="form-grid">

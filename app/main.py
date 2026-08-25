@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI, Form, Request
-from fastapi.responses import PlainTextResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from itsdangerous import BadSignature, URLSafeSerializer
@@ -29,7 +29,7 @@ from app.auth import (
 from app.db import aplicar_schema, get_connection
 from app.google_places import buscar_empresas, extrair_cidade_uf, extrair_telefone_valido
 from app.email_finder import buscar_email_no_site
-from app.email_sender import enviar_email
+from app.email_sender import credenciais as credenciais_email, enviar_email, testar_smtp
 from app.email_receiver import buscar_respostas_novas
 
 app = FastAPI(title="CRM - Engenharia de Clientes")
@@ -118,9 +118,16 @@ def _enfileirar_sequencia_email(conn, prospect_id: int) -> None:
     )
 
 
-def processar_fila_email() -> None:
+def processar_fila_email() -> list[str]:
     """Rodado periodicamente pelo scheduler: envia o e-mail da vez pra quem estiver
-    devido, e agenda a próxima etapa ou encerra a sequência."""
+    devido, e agenda a próxima etapa ou encerra a sequência. Devolve (e imprime no log)
+    o que aconteceu em cada negócio, que é o único rastro de envio que sobra em produção."""
+    relatorio: list[str] = []
+
+    def registrar(linha: str) -> None:
+        relatorio.append(linha)
+        print(f"[fila-email] {linha}", flush=True)
+
     with get_connection() as conn:
         pendentes = conn.execute(
             """
@@ -131,6 +138,7 @@ def processar_fila_email() -> None:
                   AND p.email_opt_out = FALSE AND p.status IN ('fila', 'contatado')
             """
         ).fetchall()
+        registrar(f"{len(pendentes)} negócio(s) com e-mail vencido pra enviar")
 
         for p in pendentes:
             etapas = conn.execute(
@@ -139,6 +147,7 @@ def processar_fila_email() -> None:
                 (p["sequencia_email_id"],),
             ).fetchall()
             if p["sequencia_etapa_atual"] >= len(etapas):
+                registrar(f"#{p['id']} sequência concluída, saindo da régua")
                 conn.execute(
                     "UPDATE prospects SET sequencia_email_id = NULL, proximo_envio_email = NULL WHERE id = %s",
                     (p["id"],),
@@ -151,13 +160,15 @@ def processar_fila_email() -> None:
             corpo = _preencher_template_email(etapa["corpo"], p["decisor_nome"], p["empresa"])
             corpo += f"\n\n---\nNão quer mais receber esses e-mails? Cancele aqui: {BASE_URL}/email/descadastro/{token}"
 
-            if not enviar_email(p["decisor_email"], assunto, corpo):
+            if not enviar_email(p["decisor_email"], assunto, corpo, REMETENTE_INSTITUCIONAL):
+                registrar(f"#{p['id']} FALHOU o envio para {p['decisor_email']}, tenta de novo em 1h")
                 conn.execute(
                     "UPDATE prospects SET proximo_envio_email = NOW() + INTERVAL '1 hour' WHERE id = %s",
                     (p["id"],),
                 )
                 continue
 
+            registrar(f"#{p['id']} enviado para {p['decisor_email']} (etapa {p['sequencia_etapa_atual'] + 1}/{len(etapas)})")
             conn.execute(
                 "INSERT INTO atividades (prospect_id, tipo, nota) VALUES (%s, 'email_automatico', %s)",
                 (p["id"], f'Enviado: "{assunto}"'),
@@ -177,6 +188,16 @@ def processar_fila_email() -> None:
                     (proxima_ordem, p["id"]),
                 )
         conn.commit()
+    return relatorio
+
+
+def processar_fila_email_seguro() -> None:
+    """Wrapper do scheduler: sem isso, uma exceção aqui dentro morre no APScheduler
+    sem deixar rastro nenhum no log do Railway."""
+    try:
+        processar_fila_email()
+    except Exception as exc:
+        print(f"[fila-email] ERRO inesperado: {type(exc).__name__}: {exc}", flush=True)
 
 
 def processar_respostas_email() -> None:
@@ -208,15 +229,118 @@ def processar_respostas_email() -> None:
         conn.commit()
 
 
+def processar_respostas_email_seguro() -> None:
+    try:
+        processar_respostas_email()
+    except Exception as exc:
+        print(f"[respostas-email] ERRO inesperado: {type(exc).__name__}: {exc}", flush=True)
+
+
 BASE_URL = os.environ.get("BASE_URL", "https://crm.engenhariadeclientes.com.br")
 
 
 @app.on_event("startup")
 def startup() -> None:
     aplicar_schema()
-    scheduler.add_job(processar_fila_email, "interval", minutes=5, id="fila_email", replace_existing=True)
-    scheduler.add_job(processar_respostas_email, "interval", minutes=5, id="respostas_email", replace_existing=True)
+    # next_run_time=agora: sem isso o primeiro ciclo só rodaria 5 min depois de subir,
+    # e todo deploy/restart zerava a contagem antes de qualquer envio acontecer.
+    agora = datetime.now(timezone.utc)
+    scheduler.add_job(
+        processar_fila_email_seguro, "interval", minutes=5, id="fila_email",
+        replace_existing=True, next_run_time=agora + timedelta(seconds=20),
+    )
+    scheduler.add_job(
+        processar_respostas_email_seguro, "interval", minutes=5, id="respostas_email",
+        replace_existing=True, next_run_time=agora + timedelta(seconds=40),
+    )
     scheduler.start()
+    print("[startup] scheduler ligado: fila de e-mail e leitura de respostas a cada 5 min", flush=True)
+
+
+@app.get("/diagnostico/email")
+def diagnostico_email(request: Request, token: str = "", teste_para: str = "", forcar: int = 0):
+    """Raio-x da régua de e-mail pra depurar sem precisar de acesso ao banco: estado das
+    credenciais, do scheduler e da fila. Protegido por DIAG_TOKEN (se a variável não
+    estiver definida, a rota fica desligada)."""
+    esperado = os.environ.get("DIAG_TOKEN")
+    if not esperado or token != esperado:
+        return PlainTextResponse("não encontrado", status_code=404)
+
+    usuario, senha = credenciais_email()
+    relatorio: dict = {
+        "gmail_user": usuario,
+        "senha_app_tamanho": len(senha) if senha else 0,
+        "smtp": testar_smtp(),
+        "base_url": BASE_URL,
+        "jobs": [
+            {"id": j.id, "proxima_execucao": str(getattr(j, "next_run_time", None))}
+            for j in scheduler.get_jobs()
+        ],
+    }
+
+    if teste_para:
+        ok = enviar_email(
+            teste_para,
+            "Teste da régua de e-mail do CRM",
+            "Esse é um envio de teste automático do CRM da Engenharia de Clientes.\n"
+            "Se você recebeu isso, o disparo automático está funcionando.",
+            REMETENTE_INSTITUCIONAL,
+        )
+        relatorio["envio_teste"] = {"para": teste_para, "enviado": ok}
+
+    with get_connection() as conn:
+        contagens = conn.execute(
+            """
+            SELECT COUNT(*) FILTER (WHERE decisor_email IS NOT NULL AND decisor_email <> '') AS com_email,
+                   COUNT(*) FILTER (WHERE sequencia_email_id IS NOT NULL) AS matriculados,
+                   COUNT(*) FILTER (WHERE email_opt_out) AS opt_out,
+                   COUNT(*) FILTER (WHERE sequencia_email_id IS NOT NULL AND proximo_envio_email <= NOW()
+                                    AND email_opt_out = FALSE AND status IN ('fila', 'contatado')) AS vencidos
+            FROM prospects
+            """
+        ).fetchone()
+        relatorio["contagens"] = dict(contagens)
+        relatorio["sequencias_ativas"] = [
+            dict(r)
+            for r in conn.execute(
+                "SELECT s.id, s.nome, s.origem, s.produto_id, "
+                "(SELECT COUNT(*) FROM sequencia_etapas e WHERE e.sequencia_id = s.id) AS etapas "
+                "FROM sequencias_email s WHERE s.ativa = TRUE ORDER BY s.id"
+            ).fetchall()
+        ]
+        relatorio["na_regua"] = [
+            {
+                "id": r["id"], "nome": r["nome"], "email": r["decisor_email"], "status": r["status"],
+                "sequencia_id": r["sequencia_email_id"], "etapa": r["sequencia_etapa_atual"],
+                "proximo_envio": str(r["proximo_envio_email"]),
+            }
+            for r in conn.execute(
+                "SELECT id, nome, decisor_email, status, sequencia_email_id, sequencia_etapa_atual, "
+                "proximo_envio_email FROM prospects WHERE sequencia_email_id IS NOT NULL "
+                "ORDER BY proximo_envio_email LIMIT 20"
+            ).fetchall()
+        ]
+        relatorio["com_email_fora_da_regua"] = [
+            {"id": r["id"], "nome": r["nome"], "email": r["decisor_email"], "status": r["status"],
+             "opt_out": r["email_opt_out"]}
+            for r in conn.execute(
+                "SELECT id, nome, decisor_email, status, email_opt_out FROM prospects "
+                "WHERE decisor_email IS NOT NULL AND decisor_email <> '' AND sequencia_email_id IS NULL "
+                "ORDER BY id DESC LIMIT 20"
+            ).fetchall()
+        ]
+        relatorio["ultimas_atividades_email"] = [
+            {"prospect_id": r["prospect_id"], "nota": r["nota"], "criado_em": str(r["criado_em"])}
+            for r in conn.execute(
+                "SELECT prospect_id, nota, criado_em FROM atividades WHERE tipo = 'email_automatico' "
+                "ORDER BY id DESC LIMIT 10"
+            ).fetchall()
+        ]
+
+    if forcar:
+        relatorio["execucao_forcada"] = processar_fila_email()
+
+    return JSONResponse(relatorio)
 
 
 def _parsear_valor_brl(bruto: str) -> float | None:
@@ -617,13 +741,16 @@ def prospect_detalhe(request: Request, prospect_id: int):
         prospect = conn.execute(
             """
             SELECT p.*, c.nome AS consultor_nome, pr.nome AS produto_nome, m.nome AS motivo_perda_nome,
-                   ca.nome AS canal_aquisicao_nome, cat.nome AS categoria_aquisicao_nome
+                   ca.nome AS canal_aquisicao_nome, cat.nome AS categoria_aquisicao_nome,
+                   se.nome AS sequencia_nome,
+                   (SELECT COUNT(*) FROM sequencia_etapas WHERE sequencia_id = se.id) AS sequencia_total_etapas
             FROM prospects p
             LEFT JOIN consultores c ON c.id = p.consultor_id
             LEFT JOIN produtos pr ON pr.id = p.produto_id
             LEFT JOIN motivos_perda m ON m.id = p.motivo_perda_id
             LEFT JOIN canais_aquisicao ca ON ca.id = p.canal_aquisicao_id
             LEFT JOIN categorias_aquisicao cat ON cat.id = p.categoria_aquisicao_id
+            LEFT JOIN sequencias_email se ON se.id = p.sequencia_email_id
             WHERE p.id = %s
             """,
             (prospect_id,),
@@ -788,6 +915,17 @@ def atualizar_negocio(
                 prospect_id,
             ),
         )
+        _enfileirar_sequencia_email(conn, prospect_id)
+        conn.commit()
+    return RedirectResponse(url=f"/prospects/{prospect_id}", status_code=303)
+
+
+@app.post("/prospects/{prospect_id}/email/matricular")
+def prospect_matricular_email(request: Request, prospect_id: int):
+    redirect = exigir_login(request)
+    if redirect:
+        return redirect
+    with get_connection() as conn:
         _enfileirar_sequencia_email(conn, prospect_id)
         conn.commit()
     return RedirectResponse(url=f"/prospects/{prospect_id}", status_code=303)
