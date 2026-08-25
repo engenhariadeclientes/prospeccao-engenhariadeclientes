@@ -97,7 +97,13 @@ def _enviar_via_resend(destinatario: str, assunto: str, corpo: str, remetente_no
         return False
     global _ultimo_erro_envio
     _ultimo_erro_envio = None
-    print(f"[email] enviado (Resend) para {destinatario}: {assunto}", flush=True)
+    # O id é o que permite achar a mensagem no painel da Resend e ver se ela foi
+    # entregue, caiu em spam ou voltou — a resposta 200 só diz que ela foi aceita.
+    try:
+        id_resend = (r.json() or {}).get("id")
+    except ValueError:
+        id_resend = None
+    print(f"[email] aceito pela Resend para {destinatario} (id={id_resend}): {assunto}", flush=True)
     return True
 
 
