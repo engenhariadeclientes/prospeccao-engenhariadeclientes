@@ -30,7 +30,13 @@ from app.auth import (
 from app.db import aplicar_schema, get_connection
 from app.google_places import buscar_empresas, extrair_cidade_uf, extrair_telefone_valido
 from app.email_finder import buscar_email_no_site
-from app.email_sender import credenciais as credenciais_email, enviar_email, testar_smtp
+from app.email_sender import (
+    credenciais as credenciais_email,
+    enviar_email,
+    provedor as provedor_email,
+    testar_envio,
+    testar_envio_cache,
+)
 from app.email_receiver import buscar_respostas_novas
 
 app = FastAPI(title="CRM - Engenharia de Clientes")
@@ -276,7 +282,7 @@ def _verificar_email_no_boot() -> None:
     e-mail de verificação. Roda fora do caminho do startup porque conexão de saída
     bloqueada fica pendurada bem além do timeout do smtplib."""
     try:
-        print(f"[startup] login SMTP: {testar_smtp()}", flush=True)
+        print(f"[startup] provedor de e-mail ({provedor_email()}): {testar_envio_cache()}", flush=True)
         destino = (os.environ.get("EMAIL_TESTE_PARA") or "").strip()
         if destino:
             ok = enviar_email(
@@ -326,7 +332,8 @@ def diagnostico_email(request: Request, token: str = "", teste_para: str = "", f
     relatorio: dict = {
         "gmail_user": usuario,
         "senha_app_tamanho": len(senha) if senha else 0,
-        "smtp": testar_smtp(),
+        "provedor": provedor_email(),
+        "credencial": testar_envio(),
         "base_url": BASE_URL,
         "jobs": [
             {"id": j.id, "proxima_execucao": str(getattr(j, "next_run_time", None))}
@@ -1527,6 +1534,8 @@ def sequencias_email_lista(
         "recap_emails": recap_emails,
         "recap_erros": recap_erros,
         "recap_erro": recap_erro,
+        "email_provedor": provedor_email(),
+        "email_credencial": testar_envio_cache(),
     })
     return templates.TemplateResponse("sequencias_email.html", contexto)
 
