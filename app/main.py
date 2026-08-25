@@ -118,6 +118,35 @@ def _enfileirar_sequencia_email(conn, prospect_id: int) -> None:
     )
 
 
+def _registrar_panorama_regua(conn, registrar) -> None:
+    """Quando a fila está vazia, diz por quê: quantos têm e-mail, quantos estão
+    matriculados e o que está travando cada um. Sem isso, "0 disparados" no painel
+    é indistinguível de "está tudo funcionando e ninguém venceu ainda"."""
+    c = conn.execute(
+        """
+        SELECT COUNT(*) FILTER (WHERE decisor_email IS NOT NULL AND decisor_email <> '') AS com_email,
+               COUNT(*) FILTER (WHERE sequencia_email_id IS NOT NULL) AS na_regua,
+               COUNT(*) FILTER (WHERE email_opt_out) AS opt_out,
+               COUNT(*) FILTER (WHERE decisor_email IS NOT NULL AND decisor_email <> ''
+                                AND sequencia_email_id IS NULL AND email_opt_out = FALSE
+                                AND status IN ('fila', 'contatado')) AS elegivel_fora
+        FROM prospects
+        """
+    ).fetchone()
+    registrar(
+        f"panorama: {c['com_email']} com e-mail, {c['na_regua']} na régua, "
+        f"{c['opt_out']} descadastrados, {c['elegivel_fora']} elegíveis fora da régua"
+    )
+    for r in conn.execute(
+        "SELECT id, status, sequencia_etapa_atual, proximo_envio_email FROM prospects "
+        "WHERE sequencia_email_id IS NOT NULL ORDER BY proximo_envio_email LIMIT 5"
+    ).fetchall():
+        registrar(
+            f"  #{r['id']} status={r['status']} etapa={r['sequencia_etapa_atual']} "
+            f"próximo={r['proximo_envio_email']}"
+        )
+
+
 def processar_fila_email() -> list[str]:
     """Rodado periodicamente pelo scheduler: envia o e-mail da vez pra quem estiver
     devido, e agenda a próxima etapa ou encerra a sequência. Devolve (e imprime no log)
@@ -139,6 +168,8 @@ def processar_fila_email() -> list[str]:
             """
         ).fetchall()
         registrar(f"{len(pendentes)} negócio(s) com e-mail vencido pra enviar")
+        if not pendentes:
+            _registrar_panorama_regua(conn, registrar)
 
         for p in pendentes:
             etapas = conn.execute(
@@ -255,6 +286,21 @@ def startup() -> None:
     )
     scheduler.start()
     print("[startup] scheduler ligado: fila de e-mail e leitura de respostas a cada 5 min", flush=True)
+    print(f"[startup] login SMTP: {testar_smtp()}", flush=True)
+
+    # Definir EMAIL_TESTE_PARA dispara um único e-mail de verificação no próximo boot.
+    # Serve pra confirmar credencial e entrega de ponta a ponta sem mexer em lead real.
+    destino_teste = (os.environ.get("EMAIL_TESTE_PARA") or "").strip()
+    if destino_teste:
+        ok = enviar_email(
+            destino_teste,
+            "CRM: teste de disparo automático",
+            "Esse e-mail foi enviado pelo próprio CRM da Engenharia de Clientes para "
+            "confirmar que o disparo automático está funcionando.\n\n"
+            "Se ele chegou, a régua de e-mail consegue enviar normalmente.",
+            REMETENTE_INSTITUCIONAL,
+        )
+        print(f"[startup] e-mail de teste para {destino_teste}: {'enviado' if ok else 'FALHOU'}", flush=True)
 
 
 @app.get("/diagnostico/email")
