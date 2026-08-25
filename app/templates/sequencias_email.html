@@ -11,6 +11,17 @@
 <h1>Sequência de e-mail</h1>
 <p style="color:#666; font-size:.9rem;">Todo prospect com e-mail que estiver na Fila entra automaticamente na sequência ativa mais específica pra ele: primeiro tenta bater origem + produto, depois só origem, depois cai na sequência sem origem/produto definidos (curinga). Use <code>{{ '{{nome_decisor}}' }}</code>, <code>{{ '{{empresa}}' }}</code> e <code>{{ '{{consultor_nome}}' }}</code> no texto — são substituídos na hora do envio.</p>
 
+<div class="card" style="display:flex; gap:1.5rem; flex-wrap:wrap; align-items:center;">
+  <form method="post" action="/sequencias-email/matricular-existentes" style="display:flex; gap:.6rem; align-items:center;">
+    <span style="font-size:.85rem;"><strong>{{ candidatos_matricula }}</strong> negócio(s) com e-mail que nunca entraram numa régua</span>
+    <button type="submit" {{ 'disabled' if not candidatos_matricula else '' }}>Matricular existentes</button>
+  </form>
+  <form method="post" action="/sequencias-email/recapturar-emails" style="display:flex; gap:.6rem; align-items:center;">
+    <span style="font-size:.85rem;"><strong>{{ candidatos_recaptura }}</strong> com site mas sem e-mail ainda{% if candidatos_recaptura > 50 %} (processa 50 por clique){% endif %}</span>
+    <button type="submit" class="secundario" {{ 'disabled' if not candidatos_recaptura else '' }}>Recapturar e-mails</button>
+  </form>
+</div>
+
 {% for s in sequencias %}
 <div class="card">
   <div style="display:flex; justify-content:space-between; align-items:center;">

@@ -1286,6 +1286,15 @@ def sequencias_email_lista(request: Request):
             "SELECT id, sequencia_id, ordem, dias_apos_anterior, assunto, corpo FROM sequencia_etapas ORDER BY sequencia_id, ordem"
         ).fetchall()
         produtos = conn.execute("SELECT id, nome FROM produtos ORDER BY nome").fetchall()
+        candidatos_matricula = conn.execute(
+            "SELECT COUNT(*) AS total FROM prospects "
+            "WHERE decisor_email IS NOT NULL AND email_opt_out = FALSE "
+            "AND status IN ('fila', 'contatado') AND sequencia_email_id IS NULL"
+        ).fetchone()["total"]
+        candidatos_recaptura = conn.execute(
+            "SELECT COUNT(*) AS total FROM prospects "
+            "WHERE site IS NOT NULL AND decisor_email IS NULL AND status IN ('fila', 'contatado')"
+        ).fetchone()["total"]
         contexto = _contexto_base(request, conn)
     etapas_por_sequencia: dict[int, list] = {}
     for e in etapas:
@@ -1295,8 +1304,50 @@ def sequencias_email_lista(request: Request):
         "etapas_por_sequencia": etapas_por_sequencia,
         "produtos": produtos,
         "origem_label": ORIGEM_CADASTRO_LABEL,
+        "candidatos_matricula": candidatos_matricula,
+        "candidatos_recaptura": candidatos_recaptura,
     })
     return templates.TemplateResponse("sequencias_email.html", contexto)
+
+
+@app.post("/sequencias-email/matricular-existentes")
+def sequencias_email_matricular_existentes(request: Request):
+    redirect = exigir_admin(request)
+    if redirect:
+        return redirect
+    with get_connection() as conn:
+        ids = [
+            r["id"] for r in conn.execute(
+                "SELECT id FROM prospects WHERE decisor_email IS NOT NULL AND email_opt_out = FALSE "
+                "AND status IN ('fila', 'contatado') AND sequencia_email_id IS NULL"
+            ).fetchall()
+        ]
+        for prospect_id in ids:
+            _enfileirar_sequencia_email(conn, prospect_id)
+        conn.commit()
+    return RedirectResponse(url="/sequencias-email", status_code=303)
+
+
+@app.post("/sequencias-email/recapturar-emails")
+def sequencias_email_recapturar_emails(request: Request):
+    redirect = exigir_admin(request)
+    if redirect:
+        return redirect
+    with get_connection() as conn:
+        candidatos = conn.execute(
+            "SELECT id, site FROM prospects WHERE site IS NOT NULL AND decisor_email IS NULL "
+            "AND status IN ('fila', 'contatado') LIMIT 50"
+        ).fetchall()
+        for c in candidatos:
+            email_captado = buscar_email_no_site(c["site"])
+            if email_captado:
+                conn.execute(
+                    "UPDATE prospects SET decisor_email = %s, email_origem = 'site' WHERE id = %s",
+                    (email_captado, c["id"]),
+                )
+                _enfileirar_sequencia_email(conn, c["id"])
+        conn.commit()
+    return RedirectResponse(url="/sequencias-email", status_code=303)
 
 
 @app.post("/sequencias-email")
