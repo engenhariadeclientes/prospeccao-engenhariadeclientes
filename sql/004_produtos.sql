@@ -4,10 +4,12 @@ CREATE TABLE IF NOT EXISTS produtos (
   criado_em   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- "Empresa Inteligente" foi removido dessa lista em 25/08/2026: a migration 012
+-- renomeia esse produto pra "Empresa Inteligente - DNA IA", e reinseri-lo aqui a
+-- cada startup recriaria o nome antigo e quebraria a constraint de nome único.
 INSERT INTO produtos (nome) VALUES
   ('Formação Geração IA'),
   ('Formação Lecionando na Geração IA'),
-  ('Empresa Inteligente'),
   ('Tráfego Pago'),
   ('Método EP')
 ON CONFLICT (nome) DO NOTHING;

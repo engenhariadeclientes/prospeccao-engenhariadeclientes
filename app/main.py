@@ -389,7 +389,13 @@ def funil(
 
 
 @app.post("/buscar")
-def buscar(request: Request, categoria: str = Form(...), cidade: str = Form(...), max_resultados: int = Form(40)):
+def buscar(
+    request: Request,
+    categoria: str = Form(...),
+    cidade: str = Form(...),
+    max_resultados: int = Form(40),
+    produto_id: str = Form(""),
+):
     redirect = exigir_login(request)
     if redirect:
         return redirect
@@ -400,6 +406,7 @@ def buscar(request: Request, categoria: str = Form(...), cidade: str = Form(...)
     cidade = cidade.strip()
     query = f"{categoria} em {cidade}"
     max_resultados = max(1, min(max_resultados, 120))
+    produto_val = int(produto_id) if produto_id else None
 
     encontrados = 0
     novos = 0
@@ -435,15 +442,15 @@ def buscar(request: Request, categoria: str = Form(...), cidade: str = Form(...)
             email_captado = buscar_email_no_site(site) if site else None
             row = conn.execute(
                 """
-                INSERT INTO prospects (prospeccao_id, nome, telefone, endereco, cidade, uf, categoria, categoria_aquisicao_id, site, decisor_email, email_origem, origem_cadastro)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'busca_automatica')
+                INSERT INTO prospects (prospeccao_id, nome, telefone, endereco, cidade, uf, categoria, categoria_aquisicao_id, site, decisor_email, email_origem, origem_cadastro, produto_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'busca_automatica', %s)
                 ON CONFLICT (telefone) WHERE telefone IS NOT NULL DO NOTHING
                 RETURNING id
                 """,
                 (
                     prospeccao_id, nome, telefone, lugar.get("formattedAddress"), lugar_cidade or cidade, uf,
                     categoria, categoria_aquisicao_id, site,
-                    email_captado, "site" if email_captado else None,
+                    email_captado, "site" if email_captado else None, produto_val,
                 ),
             ).fetchone()
             if row:

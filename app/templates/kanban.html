@@ -34,6 +34,12 @@
     <form class="busca" method="post" action="/buscar">
       <input type="text" name="categoria" placeholder="Categoria (ex.: garantidora de receita)" required {{ 'disabled' if not busca_liberada else '' }}>
       <input type="text" name="cidade" placeholder="Cidade (ex.: Blumenau, SC)" required {{ 'disabled' if not busca_liberada else '' }}>
+      <select name="produto_id" title="Produto/segmento — define a oferta e a régua de e-mail dessa leva de leads" {{ 'disabled' if not busca_liberada else '' }}>
+        <option value="">Segmento/produto (opcional)</option>
+        {% for p in produtos %}
+        <option value="{{ p.id }}">{{ p.nome }}</option>
+        {% endfor %}
+      </select>
       <input type="number" name="max_resultados" value="40" min="1" max="120" title="Máximo de resultados" {{ 'disabled' if not busca_liberada else '' }}>
       <button type="submit" {{ 'disabled' if not busca_liberada else '' }}>Buscar</button>
     </form>
