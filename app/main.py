@@ -36,6 +36,7 @@ from app.email_sender import (
     provedor as provedor_email,
     testar_envio,
     testar_envio_cache,
+    ultimo_erro_envio,
 )
 from app.email_receiver import buscar_respostas_novas
 
@@ -1536,6 +1537,7 @@ def sequencias_email_lista(
         "recap_erro": recap_erro,
         "email_provedor": provedor_email(),
         "email_credencial": testar_envio_cache(),
+        "email_ultimo_erro": ultimo_erro_envio(),
     })
     return templates.TemplateResponse("sequencias_email.html", contexto)
 

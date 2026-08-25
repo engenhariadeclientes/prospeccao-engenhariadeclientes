@@ -44,6 +44,22 @@ def _endereco_remetente() -> str | None:
     return (os.environ.get("EMAIL_REMETENTE") or "").strip() or (credenciais()[0])
 
 
+_ultimo_erro_envio: str | None = None
+
+
+def _registrar_falha(mensagem: str) -> None:
+    """Guarda a última falha real de envio. A checagem de credencial não enxerga
+    tudo (chave restrita não lê /domains, por exemplo), então o erro do envio de
+    verdade é o sinal mais confiável pra mostrar na tela."""
+    global _ultimo_erro_envio
+    _ultimo_erro_envio = mensagem
+    print(f"[email] {mensagem}", flush=True)
+
+
+def ultimo_erro_envio() -> str | None:
+    return _ultimo_erro_envio
+
+
 # --- caminho HTTPS (Resend) ---------------------------------------------------
 
 
@@ -73,12 +89,14 @@ def _enviar_via_resend(destinatario: str, assunto: str, corpo: str, remetente_no
             timeout=TIMEOUT,
         )
     except requests.RequestException as exc:
-        print(f"[email] FALHA de rede na Resend para {destinatario}: {type(exc).__name__}: {exc}", flush=True)
+        _registrar_falha(f"FALHA de rede na Resend para {destinatario}: {type(exc).__name__}: {exc}")
         return False
 
     if r.status_code >= 300:
-        print(f"[email] FALHA na Resend para {destinatario}: HTTP {r.status_code} {r.text[:300]}", flush=True)
+        _registrar_falha(f"FALHA na Resend para {destinatario}: HTTP {r.status_code} {r.text[:300]}")
         return False
+    global _ultimo_erro_envio
+    _ultimo_erro_envio = None
     print(f"[email] enviado (Resend) para {destinatario}: {assunto}", flush=True)
     return True
 
@@ -137,10 +155,12 @@ def _enviar_via_smtp(destinatario: str, assunto: str, corpo: str, remetente_nome
             sessao.sendmail(usuario, [destinatario], mensagem.as_string())
         finally:
             sessao.quit()
+        global _ultimo_erro_envio
+        _ultimo_erro_envio = None
         print(f"[email] enviado (SMTP) para {destinatario}: {assunto}", flush=True)
         return True
     except Exception as exc:
-        print(f"[email] FALHA no SMTP para {destinatario}: {type(exc).__name__}: {exc}", flush=True)
+        _registrar_falha(f"FALHA no SMTP para {destinatario}: {type(exc).__name__}: {exc}")
         return False
 
 
@@ -164,9 +184,18 @@ def testar_envio() -> str:
             )
         except requests.RequestException as exc:
             return f"resend: {type(exc).__name__}: {exc}"
+        # Chave "sending only" não enxerga /domains, mas envia normalmente — isso é
+        # credencial válida, não erro de configuração.
+        if r.status_code == 401 and "restricted_api_key" in r.text:
+            return f"resend: ok (chave restrita a envio, remetente {_endereco_remetente()})"
         if r.status_code >= 300:
             return f"resend: HTTP {r.status_code} {r.text[:200]}"
-        return f"resend: ok (remetente {_endereco_remetente()})"
+        dominios = [d.get("name") for d in (r.json().get("data") or []) if d.get("status") == "verified"]
+        remetente = _endereco_remetente()
+        if dominios and remetente and remetente.split("@")[-1] not in dominios:
+            return (f"resend: o domínio de {remetente} não está verificado. "
+                    f"Verificados hoje: {', '.join(dominios) or 'nenhum'}")
+        return f"resend: ok (remetente {remetente})"
 
     usuario, senha_app = credenciais()
     if not usuario or not senha_app:

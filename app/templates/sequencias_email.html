@@ -11,9 +11,23 @@
 <h1>Sequência de e-mail</h1>
 <p style="color:#666; font-size:.9rem;">Todo prospect com e-mail que estiver na Fila entra automaticamente na sequência ativa mais específica pra ele: primeiro tenta bater origem + produto, depois só origem, depois cai na sequência sem origem/produto definidos (curinga). Use <code>{{ '{{nome_decisor}}' }}</code>, <code>{{ '{{empresa}}' }}</code> e <code>{{ '{{consultor_nome}}' }}</code> no texto — são substituídos na hora do envio.</p>
 
-{% if ': ok' in email_credencial %}
+{% if ': ok' in email_credencial and not email_ultimo_erro %}
 <div class="card" style="background:#eef7ee; border-color:#bfe3bf;">
   ✓ Envio automático funcionando pelo provedor <strong>{{ email_provedor }}</strong>.
+</div>
+{% elif email_ultimo_erro %}
+<div class="card" style="background:#fdecea; border-color:#f3b8b3;">
+  <strong>⚠ O último envio falhou.</strong><br>
+  <span style="font-size:.85rem; color:#555;">{{ email_ultimo_erro }}</span>
+  {% if 'not verified' in email_ultimo_erro or 'não está verificado' in email_ultimo_erro %}
+  <p style="font-size:.85rem; color:#555; margin:.6rem 0 0;">
+    A chave da Resend está válida, mas ela só entrega e-mail de um domínio verificado. Falta
+    verificar <strong>engenhariadeclientes.com.br</strong> em
+    <a href="https://resend.com/domains" target="_blank" rel="noopener">resend.com/domains</a>:
+    a Resend mostra os registros de DNS pra adicionar e valida em alguns minutos. Enquanto isso não
+    acontece a régua continua tentando de hora em hora, então nada se perde.
+  </p>
+  {% endif %}
 </div>
 {% else %}
 <div class="card" style="background:#fdecea; border-color:#f3b8b3;">
@@ -22,10 +36,16 @@
   {% if email_provedor == 'smtp' %}
   <p style="font-size:.85rem; color:#555; margin:.6rem 0 0;">
     O servidor onde o CRM roda só libera envio por SMTP no plano Pro, então o Gmail não consegue
-    enviar daqui por mais que a senha esteja correta. O caminho mais rápido é criar uma conta na
-    <strong>Resend</strong>, verificar o domínio engenhariadeclientes.com.br e cadastrar duas
-    variáveis no servidor: <code>RESEND_API_KEY</code> e <code>EMAIL_REMETENTE</code>. Assim que elas
-    existirem a régua volta a enviar sozinha, sem mais nenhuma mudança.
+    enviar daqui por mais que a senha esteja correta. O caminho é usar a <strong>Resend</strong>:
+    cadastre <code>RESEND_API_KEY</code> e <code>EMAIL_REMETENTE</code> nas variáveis do servidor.
+  </p>
+  {% elif 'não está verificado' in email_credencial or 'not verified' in email_credencial %}
+  <p style="font-size:.85rem; color:#555; margin:.6rem 0 0;">
+    A chave da Resend está funcionando, mas ela só entrega e-mail de um domínio verificado. Falta
+    verificar <strong>engenhariadeclientes.com.br</strong> em
+    <a href="https://resend.com/domains" target="_blank" rel="noopener">resend.com/domains</a>:
+    a Resend mostra os registros de DNS pra adicionar e valida em alguns minutos. Enquanto isso não
+    acontece, a régua continua tentando de hora em hora e nada se perde.
   </p>
   {% endif %}
 </div>
