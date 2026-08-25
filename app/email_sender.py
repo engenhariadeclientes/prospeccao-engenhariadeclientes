@@ -11,6 +11,7 @@ import os
 import smtplib
 import time
 import ssl
+from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formataddr
 
@@ -63,7 +64,8 @@ def ultimo_erro_envio() -> str | None:
 # --- caminho HTTPS (Resend) ---------------------------------------------------
 
 
-def _enviar_via_resend(destinatario: str, assunto: str, corpo: str, remetente_nome: str | None) -> bool:
+def _enviar_via_resend(destinatario: str, assunto: str, corpo: str, remetente_nome: str | None,
+                       corpo_html: str | None = None) -> bool:
     chave = _chave_resend()
     remetente = _endereco_remetente()
     if not remetente:
@@ -76,6 +78,8 @@ def _enviar_via_resend(destinatario: str, assunto: str, corpo: str, remetente_no
         "subject": assunto,
         "text": corpo,
     }
+    if corpo_html:
+        payload["html"] = corpo_html
     # As respostas precisam cair na caixa que o leitor IMAP acompanha.
     resposta_para = credenciais()[0]
     if resposta_para and resposta_para != remetente:
@@ -144,13 +148,19 @@ def _conectar_autenticado(usuario: str, senha_app: str) -> smtplib.SMTP:
     raise OSError("; ".join(erros))
 
 
-def _enviar_via_smtp(destinatario: str, assunto: str, corpo: str, remetente_nome: str | None) -> bool:
+def _enviar_via_smtp(destinatario: str, assunto: str, corpo: str, remetente_nome: str | None,
+                     corpo_html: str | None = None) -> bool:
     usuario, senha_app = credenciais()
     if not usuario or not senha_app:
         print("[email] envio abortado: nem RESEND_API_KEY nem GMAIL_USER/GMAIL_APP_PASSWORD configurados", flush=True)
         return False
 
-    mensagem = MIMEText(corpo, "plain", "utf-8")
+    if corpo_html:
+        mensagem = MIMEMultipart("alternative")
+        mensagem.attach(MIMEText(corpo, "plain", "utf-8"))
+        mensagem.attach(MIMEText(corpo_html, "html", "utf-8"))
+    else:
+        mensagem = MIMEText(corpo, "plain", "utf-8")
     mensagem["Subject"] = assunto
     mensagem["From"] = formataddr((remetente_nome, usuario)) if remetente_nome else usuario
     mensagem["To"] = destinatario
@@ -229,9 +239,10 @@ def testar_envio_cache(validade_segundos: int = 300) -> str:
     return resultado
 
 
-def enviar_email(destinatario: str, assunto: str, corpo: str, remetente_nome: str | None = None) -> bool:
-    """Envia um e-mail em texto simples. Retorna False (sem levantar exceção) se
-    o envio falhar — quem chama decide o que fazer com a falha."""
+def enviar_email(destinatario: str, assunto: str, corpo: str, remetente_nome: str | None = None,
+                 corpo_html: str | None = None) -> bool:
+    """Envia o e-mail. Com corpo_html, vai nas duas versões (texto e HTML) e o cliente
+    escolhe qual mostrar. Retorna False (sem levantar exceção) se o envio falhar."""
     if _chave_resend():
-        return _enviar_via_resend(destinatario, assunto, corpo, remetente_nome)
-    return _enviar_via_smtp(destinatario, assunto, corpo, remetente_nome)
+        return _enviar_via_resend(destinatario, assunto, corpo, remetente_nome, corpo_html)
+    return _enviar_via_smtp(destinatario, assunto, corpo, remetente_nome, corpo_html)

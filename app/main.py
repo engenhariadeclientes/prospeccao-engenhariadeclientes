@@ -30,6 +30,7 @@ from app.auth import (
 from app.db import aplicar_schema, get_connection
 from app.google_places import buscar_empresas, extrair_cidade_uf, extrair_telefone_valido
 from app.email_finder import buscar_email_no_site
+from app.email_html import achatar_links, texto_para_html
 from app.email_sender import (
     credenciais as credenciais_email,
     enviar_email,
@@ -68,11 +69,24 @@ scheduler = BackgroundScheduler(timezone="UTC")
 REMETENTE_INSTITUCIONAL = "Stella Maris"
 
 
-def _preencher_template_email(texto: str, decisor_nome: str | None, empresa: str | None) -> str:
+def _links_configurados(conn) -> dict[str, str]:
+    """Agenda e WhatsApp ficam em configuracoes pra serem trocados num lugar só."""
+    linhas = conn.execute(
+        "SELECT chave, valor FROM configuracoes WHERE chave IN ('link_agenda', 'link_whatsapp')"
+    ).fetchall()
+    return {r["chave"]: (r["valor"] or "").strip() for r in linhas}
+
+
+def _preencher_template_email(
+    texto: str, decisor_nome: str | None, empresa: str | None, links: dict[str, str] | None = None
+) -> str:
+    links = links or {}
     return (
         texto.replace("{{nome_decisor}}", decisor_nome or empresa or "")
         .replace("{{empresa}}", empresa or "sua empresa")
         .replace("{{consultor_nome}}", REMETENTE_INSTITUCIONAL)
+        .replace("{{link_agenda}}", links.get("link_agenda", ""))
+        .replace("{{link_whatsapp}}", links.get("link_whatsapp", ""))
     )
 
 
@@ -185,6 +199,7 @@ def processar_fila_email() -> list[str]:
             """
         ).fetchall()
         registrar(f"{len(pendentes)} negócio(s) com e-mail vencido pra enviar")
+        links = _links_configurados(conn)
         if not pendentes:
             _registrar_panorama_regua(conn, registrar)
 
@@ -204,11 +219,13 @@ def processar_fila_email() -> list[str]:
 
             etapa = etapas[p["sequencia_etapa_atual"]]
             token = _serializer_descadastro.dumps(p["id"])
-            assunto = _preencher_template_email(etapa["assunto"], p["decisor_nome"], p["empresa"])
-            corpo = _preencher_template_email(etapa["corpo"], p["decisor_nome"], p["empresa"])
+            assunto = _preencher_template_email(etapa["assunto"], p["decisor_nome"], p["empresa"], links)
+            corpo = _preencher_template_email(etapa["corpo"], p["decisor_nome"], p["empresa"], links)
             corpo += f"\n\n---\nNão quer mais receber esses e-mails? Cancele aqui: {BASE_URL}/email/descadastro/{token}"
+            corpo_html = texto_para_html(corpo)
+            corpo = achatar_links(corpo)
 
-            if not enviar_email(p["decisor_email"], assunto, corpo, REMETENTE_INSTITUCIONAL):
+            if not enviar_email(p["decisor_email"], assunto, corpo, REMETENTE_INSTITUCIONAL, corpo_html):
                 registrar(f"#{p['id']} FALHOU o envio para {p['decisor_email']}, tenta de novo em 1h")
                 conn.execute(
                     "UPDATE prospects SET proximo_envio_email = NOW() + INTERVAL '1 hour' WHERE id = %s",
@@ -1531,6 +1548,7 @@ def sequencias_email_lista(
             "SELECT COUNT(*) AS total FROM prospects "
             "WHERE site IS NULL AND decisor_email IS NULL AND status IN ('fila', 'contatado')"
         ).fetchone()["total"]
+        links_config = _links_configurados(conn)
         contexto = _contexto_base(request, conn)
     etapas_por_sequencia: dict[int, list] = {}
     for e in etapas:
@@ -1549,6 +1567,7 @@ def sequencias_email_lista(
         "recap_erros": recap_erros,
         "recap_erro": recap_erro,
         "salvo": salvo,
+        "links": links_config,
         "email_provedor": provedor_email(),
         "email_credencial": testar_envio_cache(),
         "email_ultimo_erro": ultimo_erro_envio(),
@@ -1702,6 +1721,26 @@ def sequencia_etapa_criar(
         )
         conn.commit()
     return RedirectResponse(url="/sequencias-email", status_code=303)
+
+
+@app.post("/sequencias-email/links")
+def sequencias_email_links(
+    request: Request,
+    link_agenda: str = Form(""),
+    link_whatsapp: str = Form(""),
+):
+    redirect = exigir_admin(request)
+    if redirect:
+        return redirect
+    with get_connection() as conn:
+        for chave, valor in (("link_agenda", link_agenda), ("link_whatsapp", link_whatsapp)):
+            conn.execute(
+                "INSERT INTO configuracoes (chave, valor) VALUES (%s, %s) "
+                "ON CONFLICT (chave) DO UPDATE SET valor = EXCLUDED.valor",
+                (chave, valor.strip()),
+            )
+        conn.commit()
+    return RedirectResponse(url="/sequencias-email?salvo=1", status_code=303)
 
 
 @app.post("/sequencias-email/etapas/{etapa_id}/editar")

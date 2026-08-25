@@ -18,7 +18,7 @@
   .editor .dica { font-size: .75rem; color: #888; }
 </style>
 <h1>Sequência de e-mail</h1>
-<p style="color:#666; font-size:.9rem;">Todo prospect com e-mail que estiver na Fila entra automaticamente na sequência ativa mais específica pra ele: primeiro tenta bater origem + produto, depois só origem, depois cai na sequência sem origem/produto definidos (curinga). Use <code>{{ '{{nome_decisor}}' }}</code>, <code>{{ '{{empresa}}' }}</code> e <code>{{ '{{consultor_nome}}' }}</code> no texto — são substituídos na hora do envio.</p>
+<p style="color:#666; font-size:.9rem;">Todo prospect com e-mail que estiver na Fila entra automaticamente na sequência ativa mais específica pra ele: primeiro tenta bater origem + produto, depois só origem, depois cai na sequência sem origem/produto definidos (curinga). Use <code>{{ '{{nome_decisor}}' }}</code>, <code>{{ '{{empresa}}' }}</code> e <code>{{ '{{consultor_nome}}' }}</code> no texto — são substituídos na hora do envio. Para links, escreva <code>[texto do link](https://endereco)</code> ou cole o endereço direto.</p>
 
 {% if salvo %}
 <div class="card" style="background:#eef7ee; border-color:#bfe3bf;">✓ Texto do e-mail atualizado.</div>
@@ -72,6 +72,25 @@
   {% if recap_sites == '0' %}<br><span style="color:#666;">Nenhum site encontrado pra esses nomes — a busca por nome exato da empresa (ex.: "Fulano LTDA") às vezes não bate com o que está cadastrado no Google Maps.</span>{% endif %}
 </div>
 {% endif %}
+
+<div class="card">
+  <h2 style="font-size:1rem; margin:0 0 .2rem;">Links usados nos e-mails</h2>
+  <p style="font-size:.8rem; color:#666; margin:0 0 .6rem;">
+    Cadastre uma vez aqui e use <code>{{ '{{link_agenda}}' }}</code> e <code>{{ '{{link_whatsapp}}' }}</code>
+    no texto das etapas. Trocou o endereço aqui, todas as sequências acompanham.
+  </p>
+  <form method="post" action="/sequencias-email/links" style="display:flex; gap:1rem; flex-wrap:wrap; align-items:flex-end;">
+    <label style="font-size:.8rem; color:#555;">Link da agenda
+      <input type="url" name="link_agenda" value="{{ links.get('link_agenda', '') }}"
+             placeholder="https://cal.com/stella" style="display:block; width:20rem; margin-top:.2rem;">
+    </label>
+    <label style="font-size:.8rem; color:#555;">Link do WhatsApp
+      <input type="url" name="link_whatsapp" value="{{ links.get('link_whatsapp', '') }}"
+             placeholder="https://wa.me/5571999998888" style="display:block; width:20rem; margin-top:.2rem;">
+    </label>
+    <button type="submit">Salvar links</button>
+  </form>
+</div>
 
 <div class="card" style="display:flex; gap:1.5rem; flex-wrap:wrap; align-items:center;">
   <form method="post" action="/sequencias-email/matricular-existentes" style="display:flex; gap:.6rem; align-items:center;">
