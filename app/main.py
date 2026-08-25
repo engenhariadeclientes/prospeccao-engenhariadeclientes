@@ -8,6 +8,7 @@ conforme o que o prospect tiver disponível).
 import csv
 import io
 import os
+import threading
 from datetime import datetime, timedelta, timezone
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -270,6 +271,27 @@ def processar_respostas_email_seguro() -> None:
 BASE_URL = os.environ.get("BASE_URL", "https://crm.engenhariadeclientes.com.br")
 
 
+def _verificar_email_no_boot() -> None:
+    """Checa o login SMTP e, se EMAIL_TESTE_PARA estiver definida, manda um único
+    e-mail de verificação. Roda fora do caminho do startup porque conexão de saída
+    bloqueada fica pendurada bem além do timeout do smtplib."""
+    try:
+        print(f"[startup] login SMTP: {testar_smtp()}", flush=True)
+        destino = (os.environ.get("EMAIL_TESTE_PARA") or "").strip()
+        if destino:
+            ok = enviar_email(
+                destino,
+                "CRM: teste de disparo automático",
+                "Esse e-mail foi enviado pelo próprio CRM da Engenharia de Clientes para "
+                "confirmar que o disparo automático está funcionando.\n\n"
+                "Se ele chegou, a régua de e-mail consegue enviar normalmente.",
+                REMETENTE_INSTITUCIONAL,
+            )
+            print(f"[startup] e-mail de teste para {destino}: {'enviado' if ok else 'FALHOU'}", flush=True)
+    except Exception as exc:
+        print(f"[startup] verificação de e-mail falhou: {type(exc).__name__}: {exc}", flush=True)
+
+
 @app.on_event("startup")
 def startup() -> None:
     aplicar_schema()
@@ -286,21 +308,9 @@ def startup() -> None:
     )
     scheduler.start()
     print("[startup] scheduler ligado: fila de e-mail e leitura de respostas a cada 5 min", flush=True)
-    print(f"[startup] login SMTP: {testar_smtp()}", flush=True)
-
-    # Definir EMAIL_TESTE_PARA dispara um único e-mail de verificação no próximo boot.
-    # Serve pra confirmar credencial e entrega de ponta a ponta sem mexer em lead real.
-    destino_teste = (os.environ.get("EMAIL_TESTE_PARA") or "").strip()
-    if destino_teste:
-        ok = enviar_email(
-            destino_teste,
-            "CRM: teste de disparo automático",
-            "Esse e-mail foi enviado pelo próprio CRM da Engenharia de Clientes para "
-            "confirmar que o disparo automático está funcionando.\n\n"
-            "Se ele chegou, a régua de e-mail consegue enviar normalmente.",
-            REMETENTE_INSTITUCIONAL,
-        )
-        print(f"[startup] e-mail de teste para {destino_teste}: {'enviado' if ok else 'FALHOU'}", flush=True)
+    # Numa thread separada: se o SMTP de saída estiver bloqueado, a conexão fica pendurada
+    # e travaria a subida da aplicação inteira se rodasse aqui no caminho do startup.
+    threading.Thread(target=_verificar_email_no_boot, daemon=True).start()
 
 
 @app.get("/diagnostico/email")
