@@ -30,6 +30,7 @@ from app.db import aplicar_schema, get_connection
 from app.google_places import buscar_empresas, extrair_cidade_uf, extrair_telefone_valido
 from app.email_finder import buscar_email_no_site
 from app.email_sender import enviar_email
+from app.email_receiver import buscar_respostas_novas
 
 app = FastAPI(title="CRM - Engenharia de Clientes")
 app.add_middleware(SessionMiddleware, secret_key=os.environ.get("SESSION_SECRET", "dev-secret-troque-em-producao"))
@@ -56,11 +57,14 @@ _serializer_descadastro = URLSafeSerializer(os.environ.get("SESSION_SECRET", "de
 scheduler = BackgroundScheduler(timezone="UTC")
 
 
-def _preencher_template_email(texto: str, decisor_nome: str | None, empresa: str | None, consultor_nome: str | None) -> str:
+REMETENTE_INSTITUCIONAL = "Stella Maris"
+
+
+def _preencher_template_email(texto: str, decisor_nome: str | None, empresa: str | None) -> str:
     return (
         texto.replace("{{nome_decisor}}", decisor_nome or "")
         .replace("{{empresa}}", empresa or "sua empresa")
-        .replace("{{consultor_nome}}", consultor_nome or "Engenharia de Clientes")
+        .replace("{{consultor_nome}}", REMETENTE_INSTITUCIONAL)
     )
 
 
@@ -121,7 +125,7 @@ def processar_fila_email() -> None:
         pendentes = conn.execute(
             """
             SELECT p.id, p.decisor_email, p.decisor_nome, p.nome AS empresa, p.sequencia_email_id,
-                   p.sequencia_etapa_atual, c.nome AS consultor_nome
+                   p.sequencia_etapa_atual
             FROM prospects p
             JOIN consultores c ON c.id = p.consultor_id
             WHERE p.sequencia_email_id IS NOT NULL AND p.proximo_envio_email <= NOW()
@@ -144,8 +148,8 @@ def processar_fila_email() -> None:
 
             etapa = etapas[p["sequencia_etapa_atual"]]
             token = _serializer_descadastro.dumps(p["id"])
-            assunto = _preencher_template_email(etapa["assunto"], p["decisor_nome"], p["empresa"], p["consultor_nome"])
-            corpo = _preencher_template_email(etapa["corpo"], p["decisor_nome"], p["empresa"], p["consultor_nome"])
+            assunto = _preencher_template_email(etapa["assunto"], p["decisor_nome"], p["empresa"])
+            corpo = _preencher_template_email(etapa["corpo"], p["decisor_nome"], p["empresa"])
             corpo += f"\n\n---\nNão quer mais receber esses e-mails? Cancele aqui: {BASE_URL}/email/descadastro/{token}"
 
             if not enviar_email(p["decisor_email"], assunto, corpo):
@@ -176,6 +180,35 @@ def processar_fila_email() -> None:
         conn.commit()
 
 
+def processar_respostas_email() -> None:
+    """Rodado periodicamente pelo scheduler: lê a caixa de entrada, casa cada
+    resposta com o prospect pelo e-mail do decisor, registra na linha do tempo
+    e tira o lead da régua automática (a partir daí é conversa humana)."""
+    respostas = buscar_respostas_novas()
+    if not respostas:
+        return
+    with get_connection() as conn:
+        for r in respostas:
+            prospect = conn.execute(
+                "SELECT id FROM prospects WHERE lower(decisor_email) = %s",
+                (r["remetente"],),
+            ).fetchone()
+            if not prospect:
+                continue
+            nota = f'Resposta recebida: "{r["assunto"]}"'
+            if r["trecho"]:
+                nota += f"\n\n{r['trecho']}"
+            conn.execute(
+                "INSERT INTO atividades (prospect_id, tipo, nota) VALUES (%s, 'email_automatico', %s)",
+                (prospect["id"], nota),
+            )
+            conn.execute(
+                "UPDATE prospects SET sequencia_email_id = NULL, proximo_envio_email = NULL WHERE id = %s",
+                (prospect["id"],),
+            )
+        conn.commit()
+
+
 BASE_URL = os.environ.get("BASE_URL", "https://crm.engenhariadeclientes.com.br")
 
 
@@ -183,6 +216,7 @@ BASE_URL = os.environ.get("BASE_URL", "https://crm.engenhariadeclientes.com.br")
 def startup() -> None:
     aplicar_schema()
     scheduler.add_job(processar_fila_email, "interval", minutes=5, id="fila_email", replace_existing=True)
+    scheduler.add_job(processar_respostas_email, "interval", minutes=5, id="respostas_email", replace_existing=True)
     scheduler.start()
 
 
