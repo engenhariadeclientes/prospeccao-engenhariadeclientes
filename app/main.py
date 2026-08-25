@@ -1280,7 +1280,14 @@ ORIGEM_CADASTRO_LABEL = {
 
 
 @app.get("/sequencias-email")
-def sequencias_email_lista(request: Request):
+def sequencias_email_lista(
+    request: Request,
+    recap_processados: str = "",
+    recap_sites: str = "",
+    recap_emails: str = "",
+    recap_erros: str = "",
+    recap_erro: str = "",
+):
     redirect = exigir_admin(request)
     if redirect:
         return redirect
@@ -1321,6 +1328,11 @@ def sequencias_email_lista(request: Request):
         "candidatos_matricula": candidatos_matricula,
         "candidatos_recaptura": candidatos_recaptura,
         "candidatos_sem_site": candidatos_sem_site,
+        "recap_processados": recap_processados,
+        "recap_sites": recap_sites,
+        "recap_emails": recap_emails,
+        "recap_erros": recap_erros,
+        "recap_erro": recap_erro,
     })
     return templates.TemplateResponse("sequencias_email.html", contexto)
 
@@ -1377,23 +1389,29 @@ def sequencias_email_recapturar_sites(request: Request):
         return redirect
     api_key = os.environ.get("GOOGLE_PLACES_API_KEY")
     if not api_key:
-        return RedirectResponse(url="/sequencias-email", status_code=303)
+        return RedirectResponse(url="/sequencias-email?recap_erro=sem_api_key", status_code=303)
+
+    processados = sites_achados = emails_achados = erros = 0
     with get_connection() as conn:
         candidatos = conn.execute(
             "SELECT id, nome, cidade FROM prospects WHERE site IS NULL AND decisor_email IS NULL "
             "AND status IN ('fila', 'contatado') AND nome IS NOT NULL LIMIT 20"
         ).fetchall()
         for c in candidatos:
+            processados += 1
             query = f"{c['nome']} {c['cidade']}" if c["cidade"] else c["nome"]
             try:
                 primeiro = next(buscar_empresas(api_key, query, max_resultados=1), None)
-            except Exception:
+            except Exception as exc:
+                erros += 1
+                print(f"[recapturar-sites] erro buscando '{query}': {exc}")
                 continue
             if not primeiro:
                 continue
             site = primeiro.get("websiteUri")
             if not site:
                 continue
+            sites_achados += 1
             email_captado = buscar_email_no_site(site)
             conn.execute(
                 "UPDATE prospects SET site = %s, decisor_email = COALESCE(decisor_email, %s), "
@@ -1401,9 +1419,14 @@ def sequencias_email_recapturar_sites(request: Request):
                 (site, email_captado, email_captado, c["id"]),
             )
             if email_captado:
+                emails_achados += 1
                 _enfileirar_sequencia_email(conn, c["id"])
         conn.commit()
-    return RedirectResponse(url="/sequencias-email", status_code=303)
+    return RedirectResponse(
+        url=f"/sequencias-email?recap_processados={processados}&recap_sites={sites_achados}"
+            f"&recap_emails={emails_achados}&recap_erros={erros}",
+        status_code=303,
+    )
 
 
 @app.post("/sequencias-email")

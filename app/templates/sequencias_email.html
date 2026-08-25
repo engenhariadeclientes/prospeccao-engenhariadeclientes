@@ -11,6 +11,15 @@
 <h1>Sequência de e-mail</h1>
 <p style="color:#666; font-size:.9rem;">Todo prospect com e-mail que estiver na Fila entra automaticamente na sequência ativa mais específica pra ele: primeiro tenta bater origem + produto, depois só origem, depois cai na sequência sem origem/produto definidos (curinga). Use <code>{{ '{{nome_decisor}}' }}</code>, <code>{{ '{{empresa}}' }}</code> e <code>{{ '{{consultor_nome}}' }}</code> no texto — são substituídos na hora do envio.</p>
 
+{% if recap_erro == 'sem_api_key' %}
+<div class="card" style="background:#fdecea; border-color:#f3b8b3;">⚠ A chave da API do Google Places não está configurada no servidor — não deu pra buscar site nenhum.</div>
+{% elif recap_processados %}
+<div class="card" style="background:#eef7ee; border-color:#bfe3bf;">
+  ✓ Processados <strong>{{ recap_processados }}</strong> negócio(s): <strong>{{ recap_sites }}</strong> site(s) encontrado(s), <strong>{{ recap_emails }}</strong> e-mail(s) captado(s){% if recap_erros and recap_erros != '0' %}, {{ recap_erros }} com erro na consulta{% endif %}.
+  {% if recap_sites == '0' %}<br><span style="color:#666;">Nenhum site encontrado pra esses nomes — a busca por nome exato da empresa (ex.: "Fulano LTDA") às vezes não bate com o que está cadastrado no Google Maps.</span>{% endif %}
+</div>
+{% endif %}
+
 <div class="card" style="display:flex; gap:1.5rem; flex-wrap:wrap; align-items:center;">
   <form method="post" action="/sequencias-email/matricular-existentes" style="display:flex; gap:.6rem; align-items:center;">
     <span style="font-size:.85rem;"><strong>{{ candidatos_matricula }}</strong> negócio(s) com e-mail que nunca entraram numa régua</span>

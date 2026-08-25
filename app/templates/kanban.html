@@ -2,8 +2,8 @@
 {% block title %}Funil{% endblock %}
 {% block content %}
 <style>
-  .painel-busca { margin-bottom: 1.2rem; border: 1px solid #bcd6ef; border-radius: 8px; background: #f0f7fd; overflow: hidden; }
-  .painel-busca summary { cursor: pointer; list-style: none; padding: .7rem 1rem; display: flex; align-items: center; gap: .6rem; font-weight: 600; color: var(--navy); }
+  .painel-busca { margin-bottom: .7rem; border: 1px solid #bcd6ef; border-radius: 8px; background: #f0f7fd; overflow: hidden; }
+  .painel-busca summary { cursor: pointer; list-style: none; padding: .45rem .9rem; display: flex; align-items: center; gap: .6rem; font-weight: 600; color: var(--navy); font-size: .92rem; }
   .painel-busca summary::-webkit-details-marker { display: none; }
   .painel-busca summary::before { content: "▸"; transition: transform .15s; }
   .painel-busca[open] summary::before { transform: rotate(90deg); }
@@ -15,12 +15,14 @@
   form.busca { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .3rem; }
   form.busca input[name="categoria"] { flex: 2; min-width: 220px; }
   form.busca input[name="cidade"] { flex: 1; min-width: 160px; }
+  form.busca input, form.busca select, form.busca button { font-size: .78rem; padding: .35rem .5rem; }
   .aviso-fila { font-size: .85rem; color: #b3550a; margin-top: .6rem; }
 
-  .painel-filtros { margin-bottom: 1.2rem; border: 1px solid #dde3ec; border-radius: 8px; background: var(--navy-bg); padding: .8rem 1rem; }
-  .painel-filtros .titulo { font-weight: 600; color: var(--navy); font-size: .9rem; margin-bottom: .5rem; display: block; }
-  .filtros { display: flex; gap: .6rem; flex-wrap: wrap; align-items: flex-end; }
-  .filtros label { font-size: .8rem; color: #444; display: flex; flex-direction: column; gap: .2rem; }
+  .painel-filtros { margin-bottom: .7rem; border: 1px solid #dde3ec; border-radius: 8px; background: var(--navy-bg); padding: .45rem .7rem; }
+  .painel-filtros .titulo { font-weight: 600; color: var(--navy); font-size: .8rem; margin-bottom: .25rem; display: block; }
+  .filtros { display: flex; gap: .5rem; flex-wrap: wrap; align-items: flex-end; }
+  .filtros label { font-size: .72rem; color: #444; display: flex; flex-direction: column; gap: .15rem; }
+  .filtros input, .filtros select, .filtros button { font-size: .78rem; padding: .35rem .5rem; }
 
   .board { display: flex; gap: 1rem; overflow-x: auto; padding-bottom: 1rem; }
   .coluna { flex: 0 0 270px; background: var(--navy-bg); border-radius: 8px; padding: .75rem; display: flex; flex-direction: column; max-height: 72vh; }
@@ -31,20 +33,22 @@
   .coluna .cartoes { overflow-y: auto; flex: 1 1 auto; padding-right: .3rem; margin-right: -.3rem; }
   .badge-email { display: inline-flex; align-items: center; gap: .2rem; font-size: .72rem; background: #eaf2fb; color: #2a6fad; padding: .1rem .5rem; border-radius: 999px; margin-bottom: .35rem; }
 
-  .prospect-card { background: #fff; border: 1px solid #dde3ec; border-left: 3px solid var(--navy); border-radius: 6px; padding: .7rem; margin-bottom: .5rem; font-size: .85rem; }
-  .prospect-card .nome { font-weight: 700; font-size: 1rem; display: block; margin-bottom: .2rem; color: var(--navy); }
-  .prospect-card .meta { color: #666; font-size: .8rem; margin-bottom: .35rem; display: block; }
-  .prospect-card .chips { display: flex; flex-wrap: wrap; gap: .3rem; margin-bottom: .4rem; }
-  .chip { display: inline-block; padding: .12rem .55rem; border-radius: 999px; font-size: .72rem; background: #eef1f6; color: #333; white-space: nowrap; }
+  .prospect-card { background: #fff; border: 1px solid #dde3ec; border-left: 3px solid var(--navy); border-radius: 6px; padding: .4rem .55rem; margin-bottom: .3rem; font-size: .8rem; }
+  .prospect-card .nome { font-weight: 700; font-size: .88rem; display: block; margin-bottom: .1rem; color: var(--navy); line-height: 1.2; text-decoration: none; }
+  .prospect-card .nome:hover { text-decoration: underline; }
+  .prospect-card .meta { color: #666; font-size: .72rem; margin-bottom: .2rem; display: block; line-height: 1.3; }
+  .prospect-card .chips { display: flex; flex-wrap: wrap; gap: .25rem; margin-bottom: .25rem; }
+  .chip { display: inline-block; padding: .05rem .45rem; border-radius: 999px; font-size: .66rem; background: #eef1f6; color: #333; white-space: nowrap; }
   .chip.valor { background: #e3ecf7; color: var(--navy); font-weight: 700; }
   .chip.temp-quente { background: #fdecea; color: #c0392b; }
   .chip.temp-morno { background: #fff6e0; color: #a9761b; }
   .chip.temp-frio { background: #eaf2fb; color: #2a6fad; }
-  .badge-acao { display: block; padding: .35rem .55rem; border-radius: 6px; font-size: .78rem; margin-bottom: .4rem; }
+  .badge-acao { display: block; padding: .12rem .4rem; border-radius: 6px; font-size: .66rem; margin-bottom: .18rem; line-height: 1.25; }
   .badge-acao.tem-acao { background: #fff3e6; color: #a9550a; }
   .badge-acao.sem-acao { background: #fdecea; color: #c0392b; font-weight: 600; }
-  .prospect-card a { font-size: .8rem; }
-  .prospect-card button.assumir { font-size: .75rem; padding: .2rem .5rem; margin-left: .4rem; }
+  .badge-email { font-size: .64rem; padding: .05rem .4rem; margin-bottom: .2rem; }
+  .prospect-card a { font-size: .72rem; }
+  .prospect-card button.assumir { font-size: .68rem; padding: .1rem .4rem; margin-left: .3rem; }
   .buscas-recentes { font-size: .85rem; color: #555; }
 </style>
 
@@ -136,12 +140,11 @@
     <div class="cartoes">
     {% for p in colunas[status] %}
     <div class="prospect-card">
-      <span class="nome">{{ p.nome or 'Sem nome' }}</span>
+      <a class="nome" href="/prospects/{{ p.id }}">{{ p.nome or 'Sem nome' }} →</a>
       {% if p.sequencia_email_id %}
       <span class="badge-email" title="Régua de e-mail automática ativa pra esse negócio">✉️ Cadência de e-mail ativa</span>
       {% endif %}
-      <span class="meta">{{ p.cidade or '—' }}{% if p.uf %}/{{ p.uf }}{% endif %} · {{ p.categoria }}</span>
-      <span class="meta">📞 <a href="tel:{{ p.telefone }}">{{ p.telefone }}</a></span>
+      <span class="meta">{{ p.cidade or '—' }}{% if p.uf %}/{{ p.uf }}{% endif %} · 📞 <a href="tel:{{ p.telefone }}">{{ p.telefone }}</a></span>
 
       {% if p.produto_nome or p.valor_orcamento or p.temperatura %}
       <div class="chips">
@@ -157,16 +160,14 @@
       <span class="badge-acao sem-acao">⚠ Sem próxima ação agendada</span>
       {% endif %}
 
-      <span class="meta">Entrou em {{ p.criado_em.strftime('%d/%m/%Y') }}</span>
       <span class="meta">
-        {{ p.consultor_nome or 'sem responsável' }}
+        {{ p.criado_em.strftime('%d/%m') }} · {{ p.consultor_nome or 'sem responsável' }}
         {% if not p.consultor_nome %}
         <form method="post" action="/prospects/{{ p.id }}/assumir" style="display:inline">
           <button type="submit" class="assumir">Assumir</button>
         </form>
         {% endif %}
       </span>
-      <a href="/prospects/{{ p.id }}">Ver detalhes →</a>
     </div>
     {% else %}
     <p style="font-size:.8rem; color:#999;">Vazio</p>
