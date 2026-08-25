@@ -13,7 +13,13 @@ import requests
 
 TIMEOUT = 5
 CAMINHOS_CONTATO = ["", "/contato", "/contact", "/fale-conosco", "/sobre", "/about"]
-PREFIXOS_PRIORITARIOS = ["contato", "comercial", "vendas", "atendimento", "sac", "faleconosco"]
+# Escala de prioridade: e-mails com cara institucional primeiro (secretaria, direção...),
+# comercial/vendas por último — abordagem institucional gera mais abertura que "boa de venda".
+PREFIXOS_PRIORITARIOS = [
+    "secretaria", "diretoria", "direcao", "institucional", "presidencia", "coordenacao",
+    "contato", "rh", "financeiro", "administrativo",
+    "comercial", "vendas", "atendimento", "sac", "faleconosco",
+]
 
 EMAIL_REGEX = re.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}")
 EXTENSOES_IGNORADAS = (".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".css", ".js")

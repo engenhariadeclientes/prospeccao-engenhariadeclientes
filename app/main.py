@@ -127,7 +127,6 @@ def processar_fila_email() -> None:
             SELECT p.id, p.decisor_email, p.decisor_nome, p.nome AS empresa, p.sequencia_email_id,
                    p.sequencia_etapa_atual
             FROM prospects p
-            JOIN consultores c ON c.id = p.consultor_id
             WHERE p.sequencia_email_id IS NOT NULL AND p.proximo_envio_email <= NOW()
                   AND p.email_opt_out = FALSE AND p.status IN ('fila', 'contatado')
             """
