@@ -45,6 +45,7 @@
       <a href="/agenda">Agenda{% if pendencias %} 🔔 {{ pendencias }}{% endif %}</a>
       {% if consultor.is_admin %}
       <a href="/admin">Painel Gerencial</a>
+      <a href="/sequencias-email" class="botao" style="font-size:.85rem; padding:.35rem .8rem;">✉️ Sequência de e-mail</a>
       <details class="dropdown">
         <summary>Cadastros ▾</summary>
         <div class="menu">
@@ -52,7 +53,6 @@
           <a href="/motivos-perda">Motivos de perda</a>
           <a href="/canais-aquisicao">Canais de aquisição</a>
           <a href="/categorias-aquisicao">Categorias de aquisição</a>
-          <a href="/sequencias-email">Sequência de e-mail</a>
           <a href="/consultores">Usuários</a>
           <a href="/log-acesso">Log de acesso</a>
         </div>
