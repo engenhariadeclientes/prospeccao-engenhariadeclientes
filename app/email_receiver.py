@@ -6,7 +6,15 @@ import os
 from email.header import decode_header
 from email.utils import parseaddr
 
+from app.rede import conectar_ipv4
+
 IMAP_HOST = "imap.gmail.com"
+
+
+class _IMAP4SSLIPv4(imaplib.IMAP4_SSL):
+    def _create_socket(self, timeout=None):
+        sock = conectar_ipv4(self.host, self.port, timeout or 20)
+        return self.ssl_context.wrap_socket(sock, server_hostname=self.host)
 
 
 def _decodificar_cabecalho(valor: str) -> str:
@@ -36,14 +44,14 @@ def buscar_respostas_novas() -> list[dict]:
     {remetente, assunto, trecho}. Marca os e-mails encontrados como lidos
     (efeito colateral do fetch), pra não reprocessar na próxima passada.
     Falha em silêncio: credencial ausente ou IMAP fora do ar retorna lista vazia."""
-    usuario = os.environ.get("GMAIL_USER")
-    senha_app = os.environ.get("GMAIL_APP_PASSWORD")
+    usuario = (os.environ.get("GMAIL_USER") or "").strip()
+    senha_app = "".join((os.environ.get("GMAIL_APP_PASSWORD") or "").split())
     if not usuario or not senha_app:
         return []
 
     respostas = []
     try:
-        with imaplib.IMAP4_SSL(IMAP_HOST) as imap:
+        with _IMAP4SSLIPv4(IMAP_HOST) as imap:
             imap.login(usuario, senha_app)
             imap.select("INBOX")
             status, dados = imap.search(None, "UNSEEN")
@@ -60,6 +68,7 @@ def buscar_respostas_novas() -> list[dict]:
                 assunto = _decodificar_cabecalho(msg.get("Subject") or "")
                 trecho = _extrair_texto(msg).strip()[:500]
                 respostas.append({"remetente": remetente, "assunto": assunto, "trecho": trecho})
-    except (imaplib.IMAP4.error, OSError):
+    except (imaplib.IMAP4.error, OSError) as exc:
+        print(f"[imap] falha lendo a caixa de entrada: {type(exc).__name__}: {exc}", flush=True)
         return []
     return respostas
