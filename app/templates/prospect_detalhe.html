@@ -54,7 +54,7 @@
 
   <form method="post" action="/prospects/{{ prospect.id }}/status" id="form-status" class="form-grid span-3" style="margin-top:.8rem;">
     <label>Status
-      <select name="status" id="campo-status" onchange="atualizarMotivo()">
+      <select name="status" id="campo-status" onchange="atualizarMotivo(true)">
         {% for s in status_validos %}
         <option value="{{ s }}" {{ 'selected' if s == prospect.status else '' }}>{{ status_label[s] }}</option>
         {% endfor %}
@@ -68,17 +68,22 @@
         {% endfor %}
       </select>
     </label>
-    <label class="acoes"><button type="submit" style="width:fit-content;">Salvar status</button></label>
+    <label class="acoes" id="acao-status"><button type="submit" style="width:fit-content;">Salvar como perdido</button></label>
   </form>
   {% if prospect.status == 'perdido' and prospect.motivo_perda_nome %}
   <p style="font-size:.85rem; color:#888;">Motivo registrado: {{ prospect.motivo_perda_nome }}</p>
   {% endif %}
   <script>
-    function atualizarMotivo() {
-      document.getElementById('campo-motivo').style.display =
-        document.getElementById('campo-status').value === 'perdido' ? 'flex' : 'none';
+    // Mudar o status salva na hora. Antes havia dois botões de salvar na mesma tela,
+    // um do status e outro do negócio, e escolher o de baixo descartava a mudança de
+    // status sem avisar nada. Só "perdido" ainda pede confirmação, porque precisa do motivo.
+    function atualizarMotivo(salvarDireto) {
+      var perdido = document.getElementById('campo-status').value === 'perdido';
+      document.getElementById('campo-motivo').style.display = perdido ? 'flex' : 'none';
+      document.getElementById('acao-status').style.display = perdido ? 'flex' : 'none';
+      if (salvarDireto && !perdido) document.getElementById('form-status').submit();
     }
-    atualizarMotivo();
+    atualizarMotivo(false);
   </script>
 
   <form method="post" action="/prospects/{{ prospect.id }}/consultor" class="form-grid span-3" style="margin-top:.5rem;">
@@ -194,7 +199,7 @@
   <span>✉️ Na régua de e-mail: <strong>{{ prospect.sequencia_nome }}</strong> — etapa {{ prospect.sequencia_etapa_atual + 1 }} de {{ prospect.sequencia_total_etapas }}</span>
   {% elif prospect.email_opt_out %}
   <span style="color:#c0392b;">🚫 Esse contato pediu pra sair das réguas automáticas de e-mail.</span>
-  {% elif prospect.decisor_email and prospect.status in ('fila', 'contatado') %}
+  {% elif prospect.decisor_email and prospect.status in ('fila', 'em_cadencia', 'contatado') %}
   <span style="color:#666;">Esse negócio ainda não entrou em nenhuma sequência de e-mail.</span>
   <form method="post" action="/prospects/{{ prospect.id }}/email/matricular">
     <button type="submit">✉️ Iniciar sequência de e-mail</button>
