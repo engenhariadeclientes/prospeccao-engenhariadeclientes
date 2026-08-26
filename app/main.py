@@ -46,9 +46,14 @@ app.add_middleware(SessionMiddleware, secret_key=os.environ.get("SESSION_SECRET"
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 
-STATUS_VALIDOS = ["fila", "contatado", "negociando", "ganho", "perdido"]
+STATUS_VALIDOS = ["fila", "em_cadencia", "contatado", "negociando", "ganho", "perdido"]
+# Etapas em que a régua automática pode enviar. Centralizado aqui porque a regra
+# aparecia solta em oito consultas, e cada etapa nova exigia caçar todas.
+STATUS_ELEGIVEIS_EMAIL = ("fila", "em_cadencia", "contatado")
+_SQL_ELEGIVEIS = "('fila', 'em_cadencia', 'contatado')"
 STATUS_LABEL = {
     "fila": "Fila",
+    "em_cadencia": "Em cadência",
     "contatado": "Contatado",
     "negociando": "Negociando",
     "ganho": "Ganho",
@@ -134,7 +139,7 @@ def _enfileirar_sequencia_email(conn, prospect_id: int) -> None:
     ).fetchone()
     if not prospect or not prospect["decisor_email"] or prospect["email_opt_out"]:
         return
-    if prospect["status"] not in ("fila", "contatado"):
+    if prospect["status"] not in STATUS_ELEGIVEIS_EMAIL:
         return
     if prospect["sequencia_email_id"] and prospect["sequencia_etapa_atual"] > 0:
         return
@@ -148,9 +153,14 @@ def _enfileirar_sequencia_email(conn, prospect_id: int) -> None:
     ).fetchone()
     if not primeira_etapa:
         return
+    # Sai da Fila ao entrar na régua: misturado com quem nunca foi abordado, o negócio
+    # em cadência dava a impressão de fila parada, e virar "Contatado" seria pior ainda,
+    # porque e-mail automático não é contato feito por gente.
     conn.execute(
         "UPDATE prospects SET sequencia_email_id = %s, sequencia_etapa_atual = 0, "
-        "proximo_envio_email = NOW() + (%s || ' days')::interval WHERE id = %s",
+        "proximo_envio_email = NOW() + (%s || ' days')::interval, "
+        "status = CASE WHEN status = 'fila' THEN 'em_cadencia' ELSE status END "
+        "WHERE id = %s",
         (sequencia["id"], primeira_etapa["dias_apos_anterior"], prospect_id),
     )
 
@@ -166,7 +176,7 @@ def _registrar_panorama_regua(conn, registrar) -> None:
                COUNT(*) FILTER (WHERE email_opt_out) AS opt_out,
                COUNT(*) FILTER (WHERE decisor_email IS NOT NULL AND decisor_email <> ''
                                 AND sequencia_email_id IS NULL AND email_opt_out = FALSE
-                                AND status IN ('fila', 'contatado')) AS elegivel_fora
+                                AND status IN ('fila', 'em_cadencia', 'contatado')) AS elegivel_fora
         FROM prospects
         """
     ).fetchone()
@@ -201,7 +211,7 @@ def processar_fila_email() -> list[str]:
                    p.sequencia_etapa_atual
             FROM prospects p
             WHERE p.sequencia_email_id IS NOT NULL AND p.proximo_envio_email <= NOW()
-                  AND p.email_opt_out = FALSE AND p.status IN ('fila', 'contatado')
+                  AND p.email_opt_out = FALSE AND p.status IN ('fila', 'em_cadencia', 'contatado')
             """
         ).fetchall()
         registrar(f"{len(pendentes)} negócio(s) com e-mail vencido pra enviar")
@@ -391,7 +401,7 @@ def diagnostico_email(request: Request, token: str = "", teste_para: str = "", f
                    COUNT(*) FILTER (WHERE sequencia_email_id IS NOT NULL) AS matriculados,
                    COUNT(*) FILTER (WHERE email_opt_out) AS opt_out,
                    COUNT(*) FILTER (WHERE sequencia_email_id IS NOT NULL AND proximo_envio_email <= NOW()
-                                    AND email_opt_out = FALSE AND status IN ('fila', 'contatado')) AS vencidos
+                                    AND email_opt_out = FALSE AND status IN ('fila', 'em_cadencia', 'contatado')) AS vencidos
             FROM prospects
             """
         ).fetchone()
@@ -1052,7 +1062,7 @@ def assumir_prospect(request: Request, prospect_id: int):
     consultor = consultor_logado(request)
     with get_connection() as conn:
         conn.execute(
-            "UPDATE prospects SET consultor_id = %s, status = CASE WHEN status = 'fila' THEN 'contatado' ELSE status END, "
+            "UPDATE prospects SET consultor_id = %s, status = CASE WHEN status IN ('fila', 'em_cadencia') THEN 'contatado' ELSE status END, "
             "atualizado_em = NOW() WHERE id = %s AND consultor_id IS NULL",
             (consultor["id"], prospect_id),
         )
@@ -1088,7 +1098,7 @@ def registrar_atividade(
         if tipo in ("ligacao", "whatsapp"):
             conn.execute(
                 "UPDATE prospects SET consultor_id = COALESCE(consultor_id, %s), "
-                "status = CASE WHEN status = 'fila' THEN 'contatado' ELSE status END, atualizado_em = NOW() "
+                "status = CASE WHEN status IN ('fila', 'em_cadencia') THEN 'contatado' ELSE status END, atualizado_em = NOW() "
                 "WHERE id = %s",
                 (consultor["id"], prospect_id),
             )
@@ -1578,15 +1588,15 @@ def sequencias_email_lista(
         candidatos_matricula = conn.execute(
             "SELECT COUNT(*) AS total FROM prospects "
             "WHERE decisor_email IS NOT NULL AND email_opt_out = FALSE "
-            "AND status IN ('fila', 'contatado') AND sequencia_email_id IS NULL"
+            "AND status IN ('fila', 'em_cadencia', 'contatado') AND sequencia_email_id IS NULL"
         ).fetchone()["total"]
         candidatos_recaptura = conn.execute(
             "SELECT COUNT(*) AS total FROM prospects "
-            "WHERE site IS NOT NULL AND decisor_email IS NULL AND status IN ('fila', 'contatado')"
+            "WHERE site IS NOT NULL AND decisor_email IS NULL AND status IN ('fila', 'em_cadencia', 'contatado')"
         ).fetchone()["total"]
         candidatos_sem_site = conn.execute(
             "SELECT COUNT(*) AS total FROM prospects "
-            "WHERE site IS NULL AND decisor_email IS NULL AND status IN ('fila', 'contatado')"
+            "WHERE site IS NULL AND decisor_email IS NULL AND status IN ('fila', 'em_cadencia', 'contatado')"
         ).fetchone()["total"]
         links_config = _links_configurados(conn)
         contexto = _contexto_base(request, conn)
@@ -1624,7 +1634,7 @@ def sequencias_email_matricular_existentes(request: Request):
         ids = [
             r["id"] for r in conn.execute(
                 "SELECT id FROM prospects WHERE decisor_email IS NOT NULL AND email_opt_out = FALSE "
-                "AND status IN ('fila', 'contatado') AND sequencia_email_id IS NULL"
+                "AND status IN ('fila', 'em_cadencia', 'contatado') AND sequencia_email_id IS NULL"
             ).fetchall()
         ]
         for prospect_id in ids:
@@ -1641,7 +1651,7 @@ def sequencias_email_recapturar_emails(request: Request):
     with get_connection() as conn:
         candidatos = conn.execute(
             "SELECT id, site FROM prospects WHERE site IS NOT NULL AND decisor_email IS NULL "
-            "AND status IN ('fila', 'contatado') LIMIT 50"
+            "AND status IN ('fila', 'em_cadencia', 'contatado') LIMIT 50"
         ).fetchall()
         for c in candidatos:
             email_captado = buscar_email_no_site(c["site"])
@@ -1673,7 +1683,7 @@ def sequencias_email_recapturar_sites(request: Request):
     with get_connection() as conn:
         candidatos = conn.execute(
             "SELECT id, nome, cidade FROM prospects WHERE site IS NULL AND decisor_email IS NULL "
-            "AND status IN ('fila', 'contatado') AND nome IS NOT NULL LIMIT 20"
+            "AND status IN ('fila', 'em_cadencia', 'contatado') AND nome IS NOT NULL LIMIT 20"
         ).fetchall()
         for c in candidatos:
             processados += 1
