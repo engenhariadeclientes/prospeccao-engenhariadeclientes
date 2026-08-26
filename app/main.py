@@ -81,6 +81,12 @@ def _preencher_template_email(
     texto: str, decisor_nome: str | None, empresa: str | None, links: dict[str, str] | None = None
 ) -> str:
     links = links or {}
+    # Link não configurado tira a linha inteira: melhor a frase sumir do que chegar
+    # pela metade, tipo "escolha um horário na minha agenda: " sem endereço nenhum.
+    for chave in ("link_agenda", "link_whatsapp"):
+        if not links.get(chave):
+            marcador = "{{" + chave + "}}"
+            texto = "\n".join(l for l in texto.split("\n") if marcador not in l)
     return (
         texto.replace("{{nome_decisor}}", decisor_nome or empresa or "")
         .replace("{{empresa}}", empresa or "sua empresa")
