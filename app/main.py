@@ -174,16 +174,6 @@ def _registrar_panorama_regua(conn, registrar) -> None:
         f"panorama: {c['com_email']} com e-mail, {c['na_regua']} na régua, "
         f"{c['opt_out']} descadastrados, {c['elegivel_fora']} elegíveis fora da régua"
     )
-    # Contagem por coluna do funil: sem acesso ao banco de produção, é por aqui que dá
-    # pra saber se um negócio realmente mudou de status ou se é o filtro da tela.
-    funil = conn.execute(
-        "SELECT status, COUNT(*) AS total, COUNT(*) FILTER (WHERE consultor_id IS NULL) AS sem_dono "
-        "FROM prospects GROUP BY status ORDER BY status"
-    ).fetchall()
-    registrar(
-        "funil: "
-        + ", ".join(f"{r['status']}={r['total']}({r['sem_dono']} sem dono)" for r in funil)
-    )
     for r in conn.execute(
         "SELECT id, status, sequencia_etapa_atual, proximo_envio_email FROM prospects "
         "WHERE sequencia_email_id IS NOT NULL ORDER BY proximo_envio_email LIMIT 5"
@@ -1241,13 +1231,18 @@ def admin_dashboard(request: Request, data_de: str = "", data_ate: str = ""):
     hoje = hoje_date.isoformat()
     seis_dias_atras = (hoje_date - timedelta(days=6)).isoformat()
     vinte_nove_dias_atras = (hoje_date - timedelta(days=29)).isoformat()
-    data_de = data_de or hoje
+    # Padrão de 30 dias: "hoje" deixava o painel quase vazio na primeira abertura.
+    data_de = data_de or vinte_nove_dias_atras
     data_ate = data_ate or hoje
+    periodo = (data_de, data_ate)
 
     with get_connection() as conn:
         funil_counts = {
             row["status"]: row["total"]
-            for row in conn.execute("SELECT status, COUNT(*) AS total FROM prospects GROUP BY status").fetchall()
+            for row in conn.execute(
+                "SELECT status, COUNT(*) AS total FROM prospects "
+                "WHERE criado_em::date BETWEEN %s AND %s GROUP BY status", periodo
+            ).fetchall()
         }
         total_prospects = sum(funil_counts.values()) or 1
 
@@ -1276,15 +1271,18 @@ def admin_dashboard(request: Request, data_de: str = "", data_ate: str = ""):
                    COALESCE(SUM(p.valor_orcamento) FILTER (WHERE p.status = 'ganho'), 0) AS valor_ganho
             FROM prospects p
             JOIN consultores c ON c.id = p.consultor_id
+            WHERE p.criado_em::date BETWEEN %s AND %s
             GROUP BY c.nome
             ORDER BY total DESC
-            """
+            """,
+            periodo,
         ).fetchall()
 
         valor_por_status = {
             row["status"]: row["total_valor"]
             for row in conn.execute(
-                "SELECT status, COALESCE(SUM(valor_orcamento), 0) AS total_valor FROM prospects GROUP BY status"
+                "SELECT status, COALESCE(SUM(valor_orcamento), 0) AS total_valor FROM prospects "
+                "WHERE criado_em::date BETWEEN %s AND %s GROUP BY status", periodo
             ).fetchall()
         }
 
@@ -1292,25 +1290,30 @@ def admin_dashboard(request: Request, data_de: str = "", data_ate: str = ""):
             """
             SELECT m.nome, COUNT(*) AS total
             FROM prospects p JOIN motivos_perda m ON m.id = p.motivo_perda_id
-            WHERE p.status = 'perdido'
+            WHERE p.status = 'perdido' AND p.criado_em::date BETWEEN %s AND %s
             GROUP BY m.nome ORDER BY total DESC
-            """
+            """,
+            periodo,
         ).fetchall()
 
         por_canal_aquisicao = conn.execute(
             """
             SELECT ca.nome, COUNT(*) AS total, COUNT(*) FILTER (WHERE p.status = 'ganho') AS ganhos
             FROM prospects p JOIN canais_aquisicao ca ON ca.id = p.canal_aquisicao_id
+            WHERE p.criado_em::date BETWEEN %s AND %s
             GROUP BY ca.nome ORDER BY total DESC
-            """
+            """,
+            periodo,
         ).fetchall()
 
         por_categoria_aquisicao = conn.execute(
             """
             SELECT cat.nome, COUNT(*) AS total, COUNT(*) FILTER (WHERE p.status = 'ganho') AS ganhos
             FROM prospects p JOIN categorias_aquisicao cat ON cat.id = p.categoria_aquisicao_id
+            WHERE p.criado_em::date BETWEEN %s AND %s
             GROUP BY cat.nome ORDER BY total DESC
-            """
+            """,
+            periodo,
         ).fetchall()
 
         por_temperatura = conn.execute(
@@ -1338,10 +1341,14 @@ def admin_dashboard(request: Request, data_de: str = "", data_ate: str = ""):
         metricas_email = conn.execute(
             """
             SELECT
-              (SELECT COUNT(*) FROM prospects WHERE decisor_email IS NOT NULL) AS total_contatos_email,
-              (SELECT COUNT(*) FROM atividades WHERE tipo = 'email_automatico' AND nota LIKE 'Enviado:%%') AS emails_disparados,
-              (SELECT COUNT(DISTINCT prospect_id) FROM atividades WHERE tipo = 'email_automatico' AND nota LIKE 'Resposta recebida:%%') AS emails_respondidos
-            """
+              (SELECT COUNT(*) FROM prospects WHERE decisor_email IS NOT NULL
+                 AND criado_em::date BETWEEN %s AND %s) AS total_contatos_email,
+              (SELECT COUNT(*) FROM atividades WHERE tipo = 'email_automatico' AND nota LIKE 'Enviado:%%'
+                 AND criado_em::date BETWEEN %s AND %s) AS emails_disparados,
+              (SELECT COUNT(DISTINCT prospect_id) FROM atividades WHERE tipo = 'email_automatico'
+                 AND nota LIKE 'Resposta recebida:%%' AND criado_em::date BETWEEN %s AND %s) AS emails_respondidos
+            """,
+            periodo * 3,
         ).fetchone()
 
         contexto = _contexto_base(request, conn)

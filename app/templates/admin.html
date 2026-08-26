@@ -17,6 +17,29 @@
 </style>
 <h1>Painel Gerencial</h1>
 
+<div class="card" style="padding:.7rem .9rem;">
+  <form class="filtro-data" method="get" action="/admin" style="display:flex; gap:.8rem; align-items:flex-end; flex-wrap:wrap; margin:0;">
+    <label style="font-size:.8rem; color:#555;">De
+      <input type="date" name="data_de" value="{{ data_de }}" style="display:block; margin-top:.2rem;">
+    </label>
+    <label style="font-size:.8rem; color:#555;">Até
+      <input type="date" name="data_ate" value="{{ data_ate }}" style="display:block; margin-top:.2rem;">
+    </label>
+    <button type="submit">Filtrar</button>
+    <div class="atalhos" style="display:flex; gap:.4rem;">
+      <a href="/admin?data_de={{ hoje }}&data_ate={{ hoje }}" class="botao secundario">Hoje</a>
+      <a href="/admin?data_de={{ seis_dias_atras }}&data_ate={{ hoje }}" class="botao secundario">7 dias</a>
+      <a href="/admin?data_de={{ vinte_nove_dias_atras }}&data_ate={{ hoje }}" class="botao secundario">30 dias</a>
+      <a href="/admin?data_de=2000-01-01&data_ate={{ hoje }}" class="botao secundario">Tudo</a>
+    </div>
+  </form>
+  <p style="font-size:.78rem; color:#666; margin:.6rem 0 0;">
+    O período vale para os números de resultado, contando os negócios que <strong>entraram</strong>
+    entre essas datas. As seções marcadas como <em>situação atual</em> ignoram o filtro, porque
+    descrevem como o funil está agora.
+  </p>
+</div>
+
 <h2 style="font-size:1.1rem">Funil (estágios) e valor em pipeline</h2>
 {% for status in status_validos %}
 <div class="linha-funil">
@@ -51,7 +74,7 @@
 </div>
 {% endif %}
 
-<h2 style="font-size:1.1rem">Probabilidade de fechamento por temperatura</h2>
+<h2 style="font-size:1.1rem">Probabilidade de fechamento por temperatura <span style="font-size:.72rem; color:#888; font-weight:normal;">— situação atual</span></h2>
 <p style="font-size:.85rem; color:#666; margin-top:-.5rem;">Só considera negócios ainda abertos (fora de Ganho/Perdido).</p>
 <table>
   <thead><tr><th>Temperatura</th><th>Negócios abertos</th><th>Valor em pipeline</th></tr></thead>
@@ -97,20 +120,6 @@
 </table>
 
 <h2 style="font-size:1.1rem">Atividade por usuário — produtividade diária</h2>
-<form class="filtro-data" method="get" action="/admin">
-  <label>De
-    <input type="date" name="data_de" value="{{ data_de }}">
-  </label>
-  <label>Até
-    <input type="date" name="data_ate" value="{{ data_ate }}">
-  </label>
-  <button type="submit">Filtrar</button>
-  <div class="atalhos">
-    <a href="/admin?data_de={{ hoje }}&data_ate={{ hoje }}" class="botao secundario">Hoje</a>
-    <a href="/admin?data_de={{ seis_dias_atras }}&data_ate={{ hoje }}" class="botao secundario">7 dias</a>
-    <a href="/admin?data_de={{ vinte_nove_dias_atras }}&data_ate={{ hoje }}" class="botao secundario">30 dias</a>
-  </div>
-</form>
 <table>
   <thead><tr><th>Usuário</th><th>Ligações</th><th>WhatsApp</th><th>Anotações</th><th>Tarefas concluídas</th><th>Total</th></tr></thead>
   <tbody>
