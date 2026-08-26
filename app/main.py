@@ -548,7 +548,7 @@ def funil(
             parametros.extend([int(ver), int(ver)])
     else:
         condicoes.append(
-            "(p.consultor_id = %s OR (p.status = 'fila' AND p.consultor_id IS NULL) "
+            "(p.consultor_id = %s OR p.consultor_id IS NULL "
             "OR EXISTS (SELECT 1 FROM prospect_participantes pp WHERE pp.prospect_id = p.id AND pp.consultor_id = %s))"
         )
         parametros.extend([consultor["id"], consultor["id"]])
@@ -940,21 +940,34 @@ def remover_participante(request: Request, prospect_id: int, consultor_id: int):
 
 
 @app.post("/prospects/{prospect_id}/status")
-def atualizar_status(prospect_id: int, status: str = Form(...), motivo_perda_id: str = Form("")):
+def atualizar_status(
+    request: Request, prospect_id: int, status: str = Form(...), motivo_perda_id: str = Form("")
+):
+    redirect = exigir_login(request)
+    if redirect:
+        return redirect
     if status not in STATUS_VALIDOS:
         return RedirectResponse(url="/", status_code=303)
+    consultor = consultor_logado(request)
     motivo_val = int(motivo_perda_id) if (status == "perdido" and motivo_perda_id) else None
     with get_connection() as conn:
+        # Quem tira o negócio da Fila fica com ele. Sem isso o negócio some do quadro:
+        # o modo "Meus" só resgata quem está sem dono enquanto está em Fila, então um
+        # lead sem dono movido pra Perdido deixava de aparecer pra qualquer consultor.
         conn.execute(
-            "UPDATE prospects SET status = %s, motivo_perda_id = %s, atualizado_em = NOW() WHERE id = %s",
-            (status, motivo_val, prospect_id),
+            "UPDATE prospects SET status = %s, motivo_perda_id = %s, "
+            "consultor_id = COALESCE(consultor_id, %s), atualizado_em = NOW() WHERE id = %s",
+            (status, motivo_val, consultor["id"], prospect_id),
         )
         conn.commit()
     return RedirectResponse(url=f"/prospects/{prospect_id}", status_code=303)
 
 
 @app.post("/prospects/{prospect_id}/consultor")
-def atribuir_consultor(prospect_id: int, consultor_id: str = Form(...)):
+def atribuir_consultor(request: Request, prospect_id: int, consultor_id: str = Form(...)):
+    redirect = exigir_login(request)
+    if redirect:
+        return redirect
     valor = int(consultor_id) if consultor_id else None
     with get_connection() as conn:
         conn.execute(
@@ -967,6 +980,7 @@ def atribuir_consultor(prospect_id: int, consultor_id: str = Form(...)):
 
 @app.post("/prospects/{prospect_id}/negocio")
 def atualizar_negocio(
+    request: Request,
     prospect_id: int,
     produto_id: str = Form(""),
     valor_orcamento: str = Form(""),
@@ -982,6 +996,9 @@ def atualizar_negocio(
     decisor_redes_sociais: str = Form(""),
     temperatura: str = Form(""),
 ):
+    redirect = exigir_login(request)
+    if redirect:
+        return redirect
     produto_val = int(produto_id) if produto_id else None
     valor_val = _parsear_valor_brl(valor_orcamento)
     previsao_val = previsao_fechamento or None
