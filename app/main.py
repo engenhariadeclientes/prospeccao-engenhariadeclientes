@@ -174,6 +174,16 @@ def _registrar_panorama_regua(conn, registrar) -> None:
         f"panorama: {c['com_email']} com e-mail, {c['na_regua']} na régua, "
         f"{c['opt_out']} descadastrados, {c['elegivel_fora']} elegíveis fora da régua"
     )
+    # Contagem por coluna do funil: sem acesso ao banco de produção, é por aqui que dá
+    # pra saber se um negócio realmente mudou de status ou se é o filtro da tela.
+    funil = conn.execute(
+        "SELECT status, COUNT(*) AS total, COUNT(*) FILTER (WHERE consultor_id IS NULL) AS sem_dono "
+        "FROM prospects GROUP BY status ORDER BY status"
+    ).fetchall()
+    registrar(
+        "funil: "
+        + ", ".join(f"{r['status']}={r['total']}({r['sem_dono']} sem dono)" for r in funil)
+    )
     for r in conn.execute(
         "SELECT id, status, sequencia_etapa_atual, proximo_envio_email FROM prospects "
         "WHERE sequencia_email_id IS NOT NULL ORDER BY proximo_envio_email LIMIT 5"
