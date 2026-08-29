@@ -29,7 +29,7 @@ from app.auth import (
 )
 from app.db import aplicar_schema, get_connection
 from app.google_places import buscar_empresas, extrair_cidade_uf, extrair_telefone_valido
-from app.email_finder import buscar_email_no_site
+from app.email_finder import buscar_contatos_no_site
 from app.email_html import achatar_links, texto_para_html
 from app.email_sender import (
     credenciais as credenciais_email,
@@ -702,18 +702,20 @@ def buscar(
 
             lugar_cidade, uf = extrair_cidade_uf(lugar.get("formattedAddress"))
             site = lugar.get("websiteUri")
-            email_captado = buscar_email_no_site(site) if site else None
+            contatos = buscar_contatos_no_site(site) if site else {"email": None, "whatsapp": None}
             row = conn.execute(
                 """
-                INSERT INTO prospects (prospeccao_id, nome, telefone, endereco, cidade, uf, categoria, categoria_aquisicao_id, site, decisor_email, email_origem, origem_cadastro, produto_id)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'busca_automatica', %s)
+                INSERT INTO prospects (prospeccao_id, nome, telefone, endereco, cidade, uf, categoria, categoria_aquisicao_id, site, decisor_email, email_origem, whatsapp_telefone, whatsapp_origem, origem_cadastro, produto_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'busca_automatica', %s)
                 ON CONFLICT (telefone) WHERE telefone IS NOT NULL DO NOTHING
                 RETURNING id
                 """,
                 (
                     prospeccao_id, nome, telefone, lugar.get("formattedAddress"), lugar_cidade or cidade, uf,
                     categoria, categoria_aquisicao_id, site,
-                    email_captado, "site" if email_captado else None, produto_val,
+                    contatos["email"], "site" if contatos["email"] else None,
+                    contatos["whatsapp"], "site" if contatos["whatsapp"] else None,
+                    produto_val,
                 ),
             ).fetchone()
             if row:
@@ -1650,16 +1652,23 @@ def sequencias_email_recapturar_emails(request: Request):
         return redirect
     with get_connection() as conn:
         candidatos = conn.execute(
-            "SELECT id, site FROM prospects WHERE site IS NOT NULL AND decisor_email IS NULL "
+            "SELECT id, site FROM prospects WHERE site IS NOT NULL "
+            "AND (decisor_email IS NULL OR whatsapp_telefone IS NULL) "
             "AND status IN ('fila', 'em_cadencia', 'contatado') LIMIT 50"
         ).fetchall()
         for c in candidatos:
-            email_captado = buscar_email_no_site(c["site"])
-            if email_captado:
+            contatos = buscar_contatos_no_site(c["site"])
+            if contatos["email"] or contatos["whatsapp"]:
                 conn.execute(
-                    "UPDATE prospects SET decisor_email = %s, email_origem = 'site' WHERE id = %s",
-                    (email_captado, c["id"]),
+                    "UPDATE prospects SET "
+                    "decisor_email = COALESCE(decisor_email, %s), "
+                    "email_origem = CASE WHEN decisor_email IS NULL AND %s::text IS NOT NULL THEN 'site' ELSE email_origem END, "
+                    "whatsapp_telefone = COALESCE(whatsapp_telefone, %s), "
+                    "whatsapp_origem = CASE WHEN whatsapp_telefone IS NULL AND %s::text IS NOT NULL THEN 'site' ELSE whatsapp_origem END "
+                    "WHERE id = %s",
+                    (contatos["email"], contatos["email"], contatos["whatsapp"], contatos["whatsapp"], c["id"]),
                 )
+            if contatos["email"]:
                 _enfileirar_sequencia_email(conn, c["id"])
         conn.commit()
     return RedirectResponse(url="/sequencias-email", status_code=303)
@@ -1700,13 +1709,17 @@ def sequencias_email_recapturar_sites(request: Request):
             if not site:
                 continue
             sites_achados += 1
-            email_captado = buscar_email_no_site(site)
+            contatos = buscar_contatos_no_site(site)
             conn.execute(
-                "UPDATE prospects SET site = %s, decisor_email = COALESCE(decisor_email, %s), "
-                "email_origem = CASE WHEN %s IS NOT NULL THEN 'site' ELSE email_origem END WHERE id = %s",
-                (site, email_captado, email_captado, c["id"]),
+                "UPDATE prospects SET site = %s, "
+                "decisor_email = COALESCE(decisor_email, %s), "
+                "email_origem = CASE WHEN %s::text IS NOT NULL THEN 'site' ELSE email_origem END, "
+                "whatsapp_telefone = COALESCE(whatsapp_telefone, %s), "
+                "whatsapp_origem = CASE WHEN %s::text IS NOT NULL THEN 'site' ELSE whatsapp_origem END "
+                "WHERE id = %s",
+                (site, contatos["email"], contatos["email"], contatos["whatsapp"], contatos["whatsapp"], c["id"]),
             )
-            if email_captado:
+            if contatos["email"]:
                 emails_achados += 1
                 _enfileirar_sequencia_email(conn, c["id"])
         conn.commit()
